@@ -1,0 +1,10 @@
+services:
+  ros2-pathfollow:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    working_dir: /workspace
+    volumes:
+      - ..:/workspace
+    stdin_open: true
+    tty: true
