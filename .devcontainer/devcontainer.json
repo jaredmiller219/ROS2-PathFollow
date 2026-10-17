@@ -1,0 +1,18 @@
+{
+  "name": "ROS 2 PathFollow Dev Environment",
+  "image": "ros:lyrical",
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+  "runArgs": [
+    "--name", "ros2_pathfollow"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-iot.vscode-ros",
+        "ms-python.python"
+      ]
+    }
+  },
+  "postCreateCommand": "echo 'source /opt/ros/lyrical/setup.bash' >> ~/.bashrc"
+}
