@@ -6,20 +6,44 @@ Main.py:
     5. Shut down ROS 2 safely when the program ends.
 
 
-Lidar.py:
+Lidar.py: This file is not to move the robot, only for tracking distance to objects
     1. Connect to the TurtleBot 4's LiDAR sensor.
         a. Subscribe to the /scan topic.
+            self.create_subscription(LaserScan, '/scan', self.scan_callback, rclpy.qos.qos_profile_sensor_data)
+            
         b. Read incoming LaserScan messages.
+            Everything Below Put into a function called "scan_callback(self, msg: LaserScan):"
 
     2. Process the LiDAR measurements.
         a. Extract distances at different angles.
-        b. Focus on the area in front of the robot.
-        c. Ignore invalid or out-of-range measurements.
+            ranges = np.array(msg.ranges)
+            angles = np.linspace(msg.angle_min, msg.angle_max, len(ranges))
 
-    3. Determine obstacle distances.
-        a. Find the closest obstacle in the robot's path.
-        b. Account for the distance between the sensor and the front bumper.
+        b. Focus on the area in front of the robot.
+            theta_max = np.radians(FOV_ANGLE / 2.0)
+
+        c. Ignore invalid or out-of-range measurements. i.e. Filter out inf, NaN, or values equal to 0.0
+            is_valid = np.isfinite(ranges) & (ranges > 0.0)
+
+    3. Determine obstacle distances.       
+        a. Find the closest obstacle distance measured by the LiDAR sensor:
+            a1. Filter the LiDAR scan to a front-facing field of view (FOV) to focus only on a ±X° forward arc.
+                fov_mask = (angles >= -theta_max) & (angles <= theta_max)
+                d_fov = ranges[fov_mask]
+        
+            a2. Apply the filter defined in 2c that ignores invalid readings:
+                valid_mask = is_valid_range(d_fov)
+                d_valid = d_fov[valid_mask]
+                
+            a3. Using the final filtered values, calculate the distance to the closest object in front of the robot:
+                d_closest_object = np.min(d_valid) if len(d_valid) > 0 else float("inf")
+                
+        b. Calculate the actual physical distance from the front bumper to the object to account for sensor offset:
+            Distance_With_Sensor_Offset = d_closest_object - Sensor_To_Robot_Front_Bumper_Distance
+            Where Sensor_To_Robot_Front_Bumper_Distance is a constant value, meaning it should never change.
+
         c. Provide the processed distance data to obstacle_avoidance.py.
+            return Distance_With_Sensor_Offset
 
 
 Obstacle Avoidance:

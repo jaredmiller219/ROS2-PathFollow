@@ -1,0 +1,28 @@
+# Environment variables and local secrets
+.env
+.env.local
+*.local
+*.secret
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Common IDE/Editor folders
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Log files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Custom Files
+docs/Tasks.txt
