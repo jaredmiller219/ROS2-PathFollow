@@ -1,0 +1,84 @@
+Main.py:
+    1. Import the robot controller.
+    2. Initialize the ROS 2 system.
+    3. Start the robot controller.
+    4. Keep the program running while the robot navigates.
+    5. Shut down ROS 2 safely when the program ends.
+
+
+Lidar.py:
+    1. Connect to the TurtleBot 4's LiDAR sensor.
+        a. Subscribe to the /scan topic.
+        b. Read incoming LaserScan messages.
+
+    2. Process the LiDAR measurements.
+        a. Extract distances at different angles.
+        b. Focus on the area in front of the robot.
+        c. Ignore invalid or out-of-range measurements.
+
+    3. Determine obstacle distances.
+        a. Find the closest obstacle in the robot's path.
+        b. Account for the distance between the sensor and the front bumper.
+        c. Provide the processed distance data to obstacle_avoidance.py.
+
+
+Obstacle Avoidance:
+    1. Check whether an obstacle blocks the planned path.
+        a. Receive processed LiDAR measurements.
+        b. Compare obstacle distances against a safety threshold.
+
+    2. Decide how the robot should move.
+        a. If the path is clear, continue straight.
+        b. If an obstacle is detected, stop or slow down.
+        c. Choose a safe direction to navigate around it.
+
+    3. Navigate around the obstacle using a simplified Bug algorithm.
+        a. Move around the obstacle while maintaining safe clearance.
+        b. Continuously check for obstacles using LiDAR.
+        c. Determine when the original path is clear again.
+
+    4. Return to the original path.
+        a. Steer toward the original line to the destination.
+        b. Resume straight-line navigation when safe.
+
+
+Odometry:
+    1. Read the robot's odometry data.
+        a. Subscribe to the /odom topic.
+        b. Extract the estimated position and orientation.
+
+    2. Track the robot's movement.
+        a. Record the starting position.
+        b. Estimate the distance traveled.
+        c. Track changes in the robot's heading.
+
+    3. Monitor progress toward the destination.
+        a. Calculate the remaining distance to the goal.
+        b. Estimate the direction the robot needs to travel.
+        c. Provide position information to the controller.
+
+    4. Support path recovery.
+        a. Track the original straight-line route.
+        b. Help determine when the robot has moved away from that route.
+        c. Provide information needed to guide the robot back toward it.
+
+Robot Controller:
+    1. Initialize the robot controller.
+        a. Create a ROS 2 node.
+        b. Set the destination and starting position.
+        c. Initialize the necessary subscribers and publishers.
+
+    2. Gather sensor information.
+        a. Receive LiDAR data to detect obstacles.
+        b. Receive odometry data to estimate position and orientation.
+
+    3. Control the robot's movement.
+        a. Calculate the direction and distance to the destination.
+        b. Move forward when the path is clear.
+        c. Use obstacle_avoidance.py when an obstacle blocks the path.
+        d. Publish velocity commands to control linear and angular movement.
+
+    4. Repeat until the destination is reached.
+        a. Continuously update sensor readings and position estimates.
+        b. Adjust movement based on obstacles and progress.
+        c. Stop the robot when it reaches the destination or a safety condition requires it to stop.
