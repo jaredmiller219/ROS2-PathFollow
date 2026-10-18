@@ -10,5 +10,4 @@ Containers. See the [Docker Instructions Guide](docs/Docker_Instructions.md)
 for requirements and setup instructions.
 
 A TurtleBot 4 and its ROS 2 network configuration are also required to test
-against a physical robot. The navigation modules are currently scaffolding;
-`src/main.py` does not yet start robot navigation.
+against a physical robot.

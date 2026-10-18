@@ -2,7 +2,7 @@
 
 ## Run the development environment
 
-Choose either Docker Compose from a terminal or VS Code Dev Containers. Both use
+Choose either Docker Compose from a terminal or VS Code Dev Containers. Both are set up to use
 the ROS 2 Lyrical image and mount this repository at `/workspace`.
 
 ### Requirements
@@ -78,12 +78,3 @@ VS Code pulls the `ros:lyrical` image if needed, mounts the repository at
 `/workspace`, and installs the listed extensions. The container is named
 `ros2_pathfollow`; if that name is already in use, remove the existing container
 or change the name in `runArgs`.
-
-### Run the project entry point
-
-Use the integrated terminal to run project commands, for example
-`python3 src/main.py`.
-
-A TurtleBot 4 and its ROS 2 network configuration are also required to test
-against a physical robot. The navigation modules are currently scaffolding;
-`src/main.py` does not yet start robot navigation.
