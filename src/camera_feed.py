@@ -40,6 +40,14 @@ class CameraWithLidar(Node):
             self.image_callback,
             10,
         )
+
+        # Publisher for overlayed image
+        self.image_publisher = self.create_publisher(
+            Image,
+            "/camera/image_with_lidar",
+            10,
+        )
+
         self.get_logger().info("Camera feed with LiDAR overlay started")
 
     def scan_callback(self, msg: LaserScan):
@@ -124,6 +132,11 @@ class CameraWithLidar(Node):
             # Display the image
             cv2.imshow("TurtleBot 4 Camera Feed with LiDAR", cv_image)
             cv2.waitKey(1)
+
+            # Publish overlayed image to ROS topic
+            overlay_msg = self.bridge.cv2_to_imgmsg(cv_image, encoding="bgr8")
+            overlay_msg.header = msg.header
+            self.image_publisher.publish(overlay_msg)
 
         except Exception as e:
             self.get_logger().error(f"Error processing image: {e}")
