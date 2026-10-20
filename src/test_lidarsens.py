@@ -34,13 +34,32 @@ class LidarSensor(Node):
             rclpy.qos.qos_profile_sensor_data,
         )
 
-        # Subscribe to camera image topic
-        self.camera_subscription = self.create_subscription(
-            Image,
+        # Try common TurtleBot 4 camera topics
+        camera_topics = [
             "/camera/image_raw",
-            self.image_callback,
-            10,
-        )
+            "/oakd/color/image_raw",
+            "/camera/color/image_raw",
+            "/camera/rgb/image_raw",
+        ]
+
+        self.camera_subscribed = False
+        for topic in camera_topics:
+            try:
+                self.camera_subscription = self.create_subscription(
+                    Image,
+                    topic,
+                    self.image_callback,
+                    10,
+                )
+                self.get_logger().info(f"Subscribed to camera topic: {topic}")
+                self.camera_subscribed = True
+                break
+            except Exception as e:
+                self.get_logger().warn(f"Failed to subscribe to {topic}: {e}")
+                continue
+
+        if not self.camera_subscribed:
+            self.get_logger().error("Could not subscribe to any camera topic")
 
     def scan_callback(self, msg: LaserScan):
         ranges = np.array(msg.ranges)
@@ -79,6 +98,7 @@ class LidarSensor(Node):
 
     def image_callback(self, msg: Image):
         try:
+            self.get_logger().info("Received camera image")
             # Convert ROS Image message to OpenCV image
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
 
