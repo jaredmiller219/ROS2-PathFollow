@@ -72,3 +72,19 @@ class LidarSensor(Node):
         
         self.get_logger().info(f"Distance to front obstacle: {final_distance:.2f} meters")
         return final_distance
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = LidarSensor()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
