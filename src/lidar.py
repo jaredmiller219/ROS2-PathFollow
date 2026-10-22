@@ -33,16 +33,15 @@ class LidarSensor(Node):
 
     def extract_scan_data(self, msg: LaserScan):
         """
-        Grab raw laser numbers.
+        Grab raw laser numbers and figure out their angles.
         """
         ranges = np.array(msg.ranges)
-        num_samples = len(ranges)
-        return ranges, num_samples
+        angles = np.linspace(msg.angle_min, msg.angle_max, len(ranges))
+        return ranges, angles
 
-    def get_front_cone(self, ranges, msg):
+    def get_valid_ranges(self, ranges, angles):
         """
-        Keep only what's right in front of the robot using index-based filtering.
-        Index 0 is straight ahead. Grab the front-left and front-right slices.
+        Keep only what's right in front of the robot and throw away errors/bad numbers.
         """
         theta_max = np.radians(self.FOV_ANGLE / 2.0)
         
@@ -58,32 +57,16 @@ class LidarSensor(Node):
         """Return the most recently measured distance to a front obstacle."""
         return self.latest_distance
 
-        front_right = ranges[:idx_window]
-        front_left = ranges[-idx_window:]
-        front_cone = np.concatenate((front_left, front_right))
-        return front_cone
-
-    def get_valid_ranges(self, front_cone, msg):
+    def calculate_final_distance(self, ranges, angles):
         """
-        Remove invalid numbers (like inf, NaN, or out-of-bounds).
+        Takes raw data, cleans it, finds the closest object, and subtracts the bumper offset.
         """
-        valid_ranges = front_cone[
-            np.isfinite(front_cone)
-            & (front_cone > msg.range_min)
-            & (front_cone < msg.range_max)
-        ]
-        return valid_ranges
-
-    def calculate_final_distance(self, valid_ranges):
-        """
-        Find the closest object and subtract the bumper offset.
-        """
-        if len(valid_ranges) > 0:
-            closest_raw = np.min(valid_ranges)
-            final_distance = closest_raw - self.SENSOR_TO_BUMPER_DISTANCE
-        else:
-            final_distance = float("inf")
-        return final_distance
+        d_valid = self.get_valid_ranges(ranges, angles)
+        
+        distance_to_closest_object = np.min(d_valid) if len(d_valid) > 0 else float("inf")
+        distance_with_sensor_offset = distance_to_closest_object - self.SENSOR_TO_BUMPER_DISTANCE
+        
+        return distance_with_sensor_offset
 
     def scan_callback(self, msg: LaserScan):
         """
