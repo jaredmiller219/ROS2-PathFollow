@@ -24,5 +24,25 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Python generated files and environments
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+htmlcov/
+.coverage
+coverage.xml
+
 # Custom Folders and Files
 docs/Tasks.txt

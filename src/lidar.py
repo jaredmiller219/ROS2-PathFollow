@@ -21,6 +21,7 @@ class LidarSensor(Node):
         # Constants
         self.FOV_ANGLE = 90.0  # FOV angle in degrees
         self.SENSOR_TO_BUMPER_DISTANCE = 0.2032  # Offset in meters. Actually go and measure this on the robot.
+        self.latest_distance = None
             
         # Connect to TurtleBot 4 LiDAR sensor
         self.subscription = self.create_subscription(
@@ -43,8 +44,19 @@ class LidarSensor(Node):
         Keep only what's right in front of the robot using index-based filtering.
         Index 0 is straight ahead. Grab the front-left and front-right slices.
         """
-        fov_rad = np.radians(self.FOV_ANGLE / 2.0)
-        idx_window = int(fov_rad / msg.angle_increment)
+        theta_max = np.radians(self.FOV_ANGLE / 2.0)
+        
+        # Keep only the front view
+        fov_mask = (angles >= -theta_max) & (angles <= theta_max)
+        d_fov = ranges[fov_mask]
+        
+        # Remove invalid numbers (like inf, NaN, or 0)
+        valid_mask = np.isfinite(d_fov) & (d_fov > 0.0)
+        return d_fov[valid_mask]
+    
+    def get_latest_distance(self):
+        """Return the most recently measured distance to a front obstacle."""
+        return self.latest_distance
 
         front_right = ranges[:idx_window]
         front_left = ranges[-idx_window:]
@@ -77,30 +89,14 @@ class LidarSensor(Node):
         """
         Main trigger: Receives the scan, calculates the final distance, and logs it.
         """
-        ranges, num_samples = self.extract_scan_data(msg)
+        ranges, angles = self.extract_scan_data(msg)
+        final_distance = self.calculate_final_distance(ranges, angles)
+        self.latest_distance = final_distance
 
-        if num_samples == 0:
-            final_distance = float("inf")
-        else:
-            front_cone = self.get_front_cone(ranges, msg)
-            valid_ranges = self.get_valid_ranges(front_cone, msg)
-            final_distance = self.calculate_final_distance(valid_ranges)
+        ## only print when the distance changes, not every time the callback is called
+        ## this is only for debugging purposes
+        if not hasattr(self, 'last_distance') or self.last_distance != final_distance:
+            self.last_distance = final_distance
+            self.get_logger().info(f"Distance to front obstacle: {final_distance:.2f} meters")
 
-        self.get_logger().info(f"Distance to front obstacle: {final_distance:.2f} meters")
         return final_distance
-
-
-def main(args=None):
-    rclpy.init(args=args)
-    node = LidarSensor()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
-
-
-if __name__ == "__main__":
-    main()
