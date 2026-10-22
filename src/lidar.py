@@ -21,6 +21,7 @@ class LidarSensor(Node):
         # Constants
         self.FOV_ANGLE = 90.0  # FOV angle in degrees
         self.SENSOR_TO_BUMPER_DISTANCE = 0.2032  # Offset in meters. Actually go and measure this on the robot.
+        self.latest_distance = None
             
         # Connect to TurtleBot 4 LiDAR sensor
         self.subscription = self.create_subscription(
@@ -51,6 +52,10 @@ class LidarSensor(Node):
         # Remove invalid numbers (like inf, NaN, or 0)
         valid_mask = np.isfinite(d_fov) & (d_fov > 0.0)
         return d_fov[valid_mask]
+    
+    def get_latest_distance(self):
+        """Return the most recently measured distance to a front obstacle."""
+        return self.latest_distance
 
     def calculate_final_distance(self, ranges, angles):
         """
@@ -69,6 +74,12 @@ class LidarSensor(Node):
         """
         ranges, angles = self.extract_scan_data(msg)
         final_distance = self.calculate_final_distance(ranges, angles)
-        
-        self.get_logger().info(f"Distance to front obstacle: {final_distance:.2f} meters")
+        self.latest_distance = final_distance
+
+        ## only print when the distance changes, not every time the callback is called
+        ## this is only for debugging purposes
+        if not hasattr(self, 'last_distance') or self.last_distance != final_distance:
+            self.last_distance = final_distance
+            self.get_logger().info(f"Distance to front obstacle: {final_distance:.2f} meters")
+
         return final_distance
