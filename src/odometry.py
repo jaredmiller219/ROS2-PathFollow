@@ -68,7 +68,8 @@ class OdometryTracker(Node):
         # get the quaternion, by using msg.pose.pose.orientation
         # sin yaw is calculated as 2*(w*z + x*y)
         # cos yaw is calculated as 1 - 2*(y^2 + z^2)
-        # then return the atan2 of sin and cos to get the yaw angle
+        # then return the arc tangent with both sin and cos to get the yaw angle
+            ## arctan2(sin_yaw, cos_yaw)
 
 
     def odometry_callback(self, msg: Odometry):
