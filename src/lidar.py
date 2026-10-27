@@ -85,11 +85,7 @@ class LidarSensor(Node):
         # Store the latest distance for other parts of the system to access
         self.latest_distance = final_distance
 
-        ## this is only for debugging purposes
-        ## only print when the distance changes, not every time the callback is called
-        if not hasattr(self, 'last_distance') or self.last_distance != final_distance:
-            self.last_distance = final_distance
-            self.get_logger().info(f"Distance to obstacle: {final_distance:.2f} meters")
+        print(f"Distance to obstacle: {final_distance:.2f} meters", flush=True)
 
         return final_distance
 
@@ -100,18 +96,7 @@ def main(args=None):
 
     try:
         lidar = LidarSensor()
-
         try:
-            def report_distance():
-                distance = lidar.get_latest_distance()
-                if distance is None:
-                    lidar.get_logger().info("Waiting for LiDAR scan data...")
-                else:
-                    lidar.get_logger().info(
-                        f"Nearest front obstacle: {distance:.3f} m from the bumper"
-                    )
-
-            lidar.create_timer(1.0, report_distance)
             rclpy.spin(lidar)
         except KeyboardInterrupt:
             pass
