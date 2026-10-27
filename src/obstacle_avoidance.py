@@ -92,8 +92,7 @@ class ObstacleAvoidance:
 
 
     # Define your main execution cycle or sensor callback function (e.g., handling laser/odometry data):
-        # Check OdometryTracker.has_received_odometry from odometry.py before
-        # using its pose.
+        # Check OdometryTracker.has_received_odometry from odometry.py before using its pose.
         # Retrieve the current position with OdometryTracker.get_position()
         # from odometry.py and heading with
         # OdometryTracker.get_orientation() from odometry.py.
@@ -124,3 +123,33 @@ class ObstacleAvoidance:
                 # provides only the closest front-field distance.
                 # Calculate steering velocities to maintain a safe, fixed distance from the object
                 # Drive parallel to the object's boundary to navigate around it
+    
+    def update_state(self) -> str | None:
+            """Update the avoidance state from current sensors; return None if unready."""
+            if not self.odometry.has_received_odometry:
+                return None
+
+            lidar_distance = self.lidar.get_latest_distance()
+            if (lidar_distance is None or math.isnan(lidar_distance) or lidar_distance == -math.inf):
+                return None
+
+            current_position = self.odometry.get_position()
+
+            if self.state == "GO_TO_GOAL":
+                if lidar_distance <= self.obstacle_distance_threshold:
+                    self.obstacle_hit_point = current_position
+                    self.state = "WALL_FOLLOW"
+            
+            elif self.state == "WALL_FOLLOW":
+                if (self.obstacle_hit_point is not None
+                    and self.check_motion_line(current_position)
+                    and self.distance_to_goal(current_position)
+                    < self.distance_to_goal(self.obstacle_hit_point)
+                ):
+                    self.obstacle_hit_point = None
+                    self.state = "GO_TO_GOAL"
+            
+            else:
+                raise ValueError(f"Unsupported obstacle-avoidance state: {self.state}")
+
+            return self.state
