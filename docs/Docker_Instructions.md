@@ -35,6 +35,11 @@ To run the project entry point without opening a shell:
 docker compose -f docker/compose.yaml run --build --rm ros2-pathfollow python3 src/main.py
 ```
 
+This starts the robot controller, LiDAR subscriber, and odometry subscriber
+together. The LiDAR continues processing `/scan` while the controller moves
+the robot. Use this command for navigation; the standalone LiDAR command below
+is only for testing the sensor without robot movement.
+
 ### Test the LiDAR node
 
 Run the LiDAR subscriber on its own:
