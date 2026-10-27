@@ -87,10 +87,6 @@ class LidarSensor(Node):
         # Store the latest distance for other parts of the system to access
         self.latest_distance = final_distance
 
-        ## this is only for debugging purposes
-        ## only print when the distance changes, not every time the callback is called
-        if not hasattr(self, 'last_distance') or self.last_distance != final_distance:
-            self.last_distance = final_distance
-            self.get_logger().info(f"Distance to obstacle: {final_distance:.2f} meters")
+        self.get_logger().info(f"Distance to obstacle: {final_distance:.2f} meters")
 
         return final_distance
