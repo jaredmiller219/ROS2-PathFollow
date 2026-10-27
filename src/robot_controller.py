@@ -26,8 +26,6 @@ class RobotController(Node):
     CONTROL_PERIOD_SECONDS = 0.1
     MAX_LINEAR_SPEED = 0.15
     APPROACH_SPEED_GAIN = 0.5
-    MAX_ANGULAR_SPEED = 0.8
-    HEADING_GAIN = 1.5
 
     def __init__(self, goal_distance: float):
         if not isinstance(goal_distance, (int, float)) or not math.isfinite(goal_distance) or goal_distance < 0:
@@ -99,23 +97,11 @@ class RobotController(Node):
         lidar_distance = self.lidar.get_latest_distance()
         if self.navigation_state == "GO_TO_GOAL":
             if lidar_distance <= self.OBSTACLE_DISTANCE_THRESHOLD:
-                self.handle_obstacle(
-                    current_position,
-                    current_orientation,
-                    lidar_distance,
-                )
+                self.handle_obstacle()
             else:
-                self.navigate_toward_goal(
-                    current_position,
-                    current_orientation,
-                    lidar_distance,
-                )
+                self.navigate_toward_goal(lidar_distance)
         elif self.navigation_state == "WALL_FOLLOW":
-            self.handle_obstacle(
-                current_position,
-                current_orientation,
-                lidar_distance,
-            )
+            self.handle_obstacle()
         elif self.navigation_state == "GOAL_REACHED":
             self.publish_stop()
         else:
@@ -137,11 +123,9 @@ class RobotController(Node):
 
     def navigate_toward_goal(
         self,
-        current_position: tuple[float, float],
-        current_orientation: float,
         lidar_distance: float | None = None,
     ) -> None:
-        """Publish a bounded velocity command toward the goal."""
+        """Drive straight forward toward the goal while front clearance is safe."""
         if self.goal_position is None:
             self.publish_stop()
             return
@@ -149,40 +133,22 @@ class RobotController(Node):
             self.publish_stop()
             return
 
-        goal_bearing = math.atan2(
-            self.goal_position[1] - current_position[1],
-            self.goal_position[0] - current_position[0],
-        )
-        heading_error = math.atan2(
-            math.sin(goal_bearing - current_orientation),
-            math.cos(goal_bearing - current_orientation),
-        )
-
         command = Twist()
-        command.angular.z = max(
-            -self.MAX_ANGULAR_SPEED,
-            min(self.MAX_ANGULAR_SPEED, self.HEADING_GAIN * heading_error),
-        )
-        if abs(heading_error) < math.pi / 4:
-            # Approach slowly as the bumper clearance nears 13 cm to reduce
-            # overshoot between LiDAR scans and control updates.
-            approach_speed = min(
+        # Approach slowly as the bumper clearance nears 13 cm to reduce
+        # overshoot between LiDAR scans and control updates.
+        command.linear.x = max(
+            0.0,
+            min(
                 self.MAX_LINEAR_SPEED,
                 self.APPROACH_SPEED_GAIN
                 * (lidar_distance - self.OBSTACLE_DISTANCE_THRESHOLD),
-            )
-            command.linear.x = approach_speed * max(0.0, math.cos(heading_error))
+            ),
+        )
 
         self.command_publisher.publish(command)
 
-    def handle_obstacle(
-        self,
-        current_position: tuple[float, float],
-        current_orientation: float,
-        lidar_distance: float,
-    ) -> None:
+    def handle_obstacle(self) -> None:
         """Update obstacle state and stop when safe wall-follow data is absent."""
-        del lidar_distance
 
         if self.obstacle_avoidance is None:
             self.publish_stop()
@@ -195,11 +161,7 @@ class RobotController(Node):
 
         self.navigation_state = avoidance_state
         if avoidance_state == "GO_TO_GOAL":
-            self.navigate_toward_goal(
-                current_position,
-                current_orientation,
-                self.lidar.get_latest_distance(),
-            )
+            self.navigate_toward_goal(self.lidar.get_latest_distance())
             return
 
         # Front-only clearance cannot determine a safe wall-following direction.
