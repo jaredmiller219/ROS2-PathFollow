@@ -108,3 +108,6 @@ def main(args=None):
     finally:
         if rclpy.ok():
             rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()
