@@ -20,10 +20,12 @@ from odometry import OdometryTracker
 from obstacle_avoidance import ObstacleAvoidance
 
 class RobotController(Node):
-    OBSTACLE_DISTANCE_THRESHOLD = 0.5
+    # lidar.py reports distance from the bumper after applying its sensor offset.
+    OBSTACLE_DISTANCE_THRESHOLD = 0.13
     GOAL_TOLERANCE = 0.1
     CONTROL_PERIOD_SECONDS = 0.1
     MAX_LINEAR_SPEED = 0.15
+    APPROACH_SPEED_GAIN = 0.5
     MAX_ANGULAR_SPEED = 0.8
     HEADING_GAIN = 1.5
 
@@ -103,7 +105,11 @@ class RobotController(Node):
                     lidar_distance,
                 )
             else:
-                self.navigate_toward_goal(current_position, current_orientation)
+                self.navigate_toward_goal(
+                    current_position,
+                    current_orientation,
+                    lidar_distance,
+                )
         elif self.navigation_state == "WALL_FOLLOW":
             self.handle_obstacle(
                 current_position,
@@ -133,9 +139,13 @@ class RobotController(Node):
         self,
         current_position: tuple[float, float],
         current_orientation: float,
+        lidar_distance: float | None = None,
     ) -> None:
         """Publish a bounded velocity command toward the goal."""
         if self.goal_position is None:
+            self.publish_stop()
+            return
+        if lidar_distance is None or math.isnan(lidar_distance):
             self.publish_stop()
             return
 
@@ -154,10 +164,14 @@ class RobotController(Node):
             min(self.MAX_ANGULAR_SPEED, self.HEADING_GAIN * heading_error),
         )
         if abs(heading_error) < math.pi / 4:
-            command.linear.x = self.MAX_LINEAR_SPEED * max(
-                0.0,
-                math.cos(heading_error),
+            # Approach slowly as the bumper clearance nears 13 cm to reduce
+            # overshoot between LiDAR scans and control updates.
+            approach_speed = min(
+                self.MAX_LINEAR_SPEED,
+                self.APPROACH_SPEED_GAIN
+                * (lidar_distance - self.OBSTACLE_DISTANCE_THRESHOLD),
             )
+            command.linear.x = approach_speed * max(0.0, math.cos(heading_error))
 
         self.command_publisher.publish(command)
 
@@ -184,6 +198,7 @@ class RobotController(Node):
             self.navigate_toward_goal(
                 current_position,
                 current_orientation,
+                self.lidar.get_latest_distance(),
             )
             return
 

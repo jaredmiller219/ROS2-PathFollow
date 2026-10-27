@@ -20,9 +20,9 @@ class LidarSensor(Node):
         """
         super().__init__('Lidar_Sensor')
         
-        # subject to change based on accuracy of objects in front
-        # for now, we will just used 90 degrees
-        self.FOV_ANGLE = 90.0  # FOV angle in degrees
+        # Inspect a narrow forward field of view to detect obstacles in the
+        # robot's immediate direction of travel.
+        self.FOV_ANGLE = 30.0  # FOV angle in degrees
         self.theta_max = np.radians(self.FOV_ANGLE / 2.0)
 
         self.SENSOR_TO_BUMPER_DISTANCE = 0.2032  # Offset in meters.
@@ -38,22 +38,46 @@ class LidarSensor(Node):
 
     def extract_scan_data(self, msg: LaserScan):
         """
-        Grab raw laser numbers and figure out their angles.
+        Return scan ranges and the angle of each range in radians.
         """
         ranges = np.array(msg.ranges)
-        angles = np.linspace(msg.angle_min, msg.angle_max, len(ranges))
+        if len(ranges) == 0:
+            return ranges, np.array([])
+
+        angle_increment = getattr(msg, "angle_increment", 0.0)
+        if angle_increment:
+            angles = msg.angle_min + np.arange(len(ranges)) * angle_increment
+        else:
+            # Keep compatibility with scans/tests that provide only the endpoints.
+            angles = np.linspace(msg.angle_min, msg.angle_max, len(ranges))
         return ranges, angles
 
-    def get_valid_ranges(self, ranges, angles):
+    def get_valid_ranges(
+        self,
+        ranges,
+        angles,
+        range_min=0.0,
+        range_max=math.inf,
+    ):
         """
-        Keep only what's right in front of the robot and throw away errors/bad numbers.
+        Keep valid measurements within the forward field of view and range limits.
         """
+        ranges = np.asarray(ranges)
+        angles = np.asarray(angles)
+        if ranges.shape != angles.shape:
+            raise ValueError("ranges and angles must have the same shape")
+
         # Keep only the front view
         fov = (angles >= -self.theta_max) & (angles <= self.theta_max)
         fov_values = ranges[fov]
 
-        # Remove invalid numbers (like inf, NaN, or 0)
-        valid_values = np.isfinite(fov_values) & (fov_values > 0.0)
+        # LaserScan specifies that measurements outside these limits are invalid.
+        valid_values = (
+            np.isfinite(fov_values)
+            & (fov_values > 0.0)
+            & (fov_values >= range_min)
+            & (fov_values <= range_max)
+        )
         return fov_values[valid_values]
 
     def get_latest_distance(self):
@@ -62,11 +86,22 @@ class LidarSensor(Node):
         """
         return self.latest_distance
 
-    def calculate_final_distance(self, ranges, angles):
+    def calculate_final_distance(
+        self,
+        ranges,
+        angles,
+        range_min=0.0,
+        range_max=math.inf,
+    ):
         """
-        Takes raw data, cleans it, finds the closest object, and subtracts the bumper offset.
+        Return the nearest valid front obstacle distance from the bumper.
         """
-        valid_distances = self.get_valid_ranges(ranges, angles)
+        valid_distances = self.get_valid_ranges(
+            ranges,
+            angles,
+            range_min,
+            range_max,
+        )
 
         if len(valid_distances) > 0:
             distance_to_closest_object = np.min(valid_distances)
@@ -82,7 +117,12 @@ class LidarSensor(Node):
         Main trigger: Receives the scan, calculates the final distance, and logs it.
         """
         ranges, angles = self.extract_scan_data(msg)
-        final_distance = self.calculate_final_distance(ranges, angles)
+        final_distance = self.calculate_final_distance(
+            ranges,
+            angles,
+            getattr(msg, "range_min", 0.0),
+            getattr(msg, "range_max", math.inf),
+        )
 
         # Store the latest distance for other parts of the system to access
         self.latest_distance = final_distance
