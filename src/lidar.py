@@ -128,3 +128,35 @@ class LidarSensor(Node):
         self.latest_distance = final_distance
 
         return final_distance
+
+
+def main(args=None):
+    """Run the LiDAR node and report the latest front-obstacle distance."""
+    rclpy.init(args=args)
+
+    try:
+        lidar = LidarSensor()
+
+        try:
+            def report_distance():
+                distance = lidar.get_latest_distance()
+                if distance is None:
+                    lidar.get_logger().info("Waiting for LiDAR scan data...")
+                else:
+                    lidar.get_logger().info(
+                        f"Nearest front obstacle: {distance:.3f} m from the bumper"
+                    )
+
+            lidar.create_timer(1.0, report_distance)
+            rclpy.spin(lidar)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            lidar.destroy_node()
+    finally:
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
