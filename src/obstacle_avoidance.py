@@ -21,44 +21,62 @@ the original path to continue toward the destination.
 #   obstacle_avoidance.py. Wall following that needs left/right ranges will
 #   require LidarSensor to expose processed scan data first.
 
-# Import the math library for square roots, powers, and absolute values
+import math
 
-# Define your Class or Tracker Node structure:
-    # Define the initialization setup:
-    # Accept the LidarSensor instance from lidar.py and the OdometryTracker
-    # instance from odometry.py, passed in by robot_controller.py; do not
-    # create duplicate sensor nodes or subscriptions.
-        # Define the coordinates where the robot begins its overall journey (x_start, y_start)
-        # Define the final destination coordinates the robot wants to reach (x_goal, y_goal)
-
-        # Calculate the 'A' coefficient of the line: vertical difference between start and goal (y_start - y_goal)
-        # Calculate the 'B' coefficient of the line: horizontal difference between goal and start (x_goal - x_start)
-        # Calculate the 'C' coefficient of the line: standard linear constant (x_start * y_goal - x_goal * y_start)
-
-        # Initialize a variable to store the (x, y) coordinates of where we first hit an obstacle (starts as empty/None)
-        # Define a small numerical threshold (e.g., 0.1 meters) to allow for sensor noise when checking if we cross the line
-        # Define the initial robot state variable (starts as "GO_TO_GOAL")
+from lidar import LidarSensor
+from odometry import OdometryTracker
 
 
-    # Define a function that accepts the robot's current (x, y) coordinates to calculate distance to goal:
-        # Calculate the difference between the goal's X and the robot's current X
-        # Calculate the difference between the goal's Y and the robot's current Y
-        # Square the X difference
-        # Square the Y difference
-        # Add the two squared values together
-        # Take the square root of that sum to get the straight-line Euclidean distance
-        # Return this final calculated distance value
+class ObstacleAvoidance:
+    """Track Bug-style obstacle avoidance using the controller's sensor nodes."""
+
+    def __init__(
+        self,
+        lidar: LidarSensor,
+        odometry: OdometryTracker,
+        start_position: tuple[float, float],
+        goal_position: tuple[float, float],
+    ):
+        self.lidar = lidar
+        self.odometry = odometry
+        self.start_position = start_position
+        self.goal_position = goal_position
+
+        x_start, y_start = start_position
+        x_goal, y_goal = goal_position
+
+        self.line_a = y_start - y_goal
+        self.line_b = x_goal - x_start
+        self.line_c = (x_start * y_goal) - (x_goal * y_start)
+
+        self.obstacle_hit_point = None
+        self.m_line_tolerance = 0.1
+        self.state = "GO_TO_GOAL"
 
 
-    # Define a function that accepts the robot's current (x, y) coordinates to check the M-Line:
-        # Multiply 'A' by the current X, multiply 'B' by the current Y, and add 'C'
-        # Take the absolute value of that sum to ensure the result is positive (this is our numerator)
-        # Square 'A' and square 'B'
-        # Add those squares together and take the square root (this is our denominator)
-        # Divide the numerator by the denominator to get the exact perpendicular distance to the M-line
+    def distance_to_goal(self, current_position: tuple[float, float]) -> float:
+        """Return the Euclidean distance from a position to the goal."""
+        x_difference = self.goal_position[0] - current_position[0]
+        y_difference = self.goal_position[1] - current_position[1]
+        return math.hypot(x_difference, y_difference)
+
+    def check_motion_line(self, current_position: tuple[float, float]) -> bool:
+        """
+        Return whether a position is within tolerance of the start-goal line.
+        """
+        x, y = current_position
+        numerator = abs((self.line_a * x) + (self.line_b * y) + self.line_c)
+        denominator = math.hypot(self.line_a, self.line_b)
+
+        # A zero-length start-to-goal line has no direction or distinct M-line.
+        if denominator == 0.0: return False
+
+        distance_from_line = numerator / denominator
+
         # Check if this perpendicular distance is smaller than your threshold:
             # If it is smaller, return True (the robot is on the line)
             # Otherwise, return False (the robot is not on the line)
+        return distance_from_line <= self.m_line_tolerance
 
 
     # Define a function that accepts the robot's current (x, y) coordinates to decide when to leave:

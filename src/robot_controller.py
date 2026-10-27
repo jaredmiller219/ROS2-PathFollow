@@ -42,66 +42,87 @@ class RobotController(Node):
         self.command_publisher = self.create_publisher(Twist, "/cmd_vel", 10)
 
 
+    # Implementation instructions for the remaining controller methods:
+    #
     # sensors_are_ready()
-    #    1. Check that the LiDAR has produced a distance reading.
-    #    2. Check OdometryTracker.has_received_odometry before using its pose.
-    #    3. Report "not ready" if either required sensor has no usable data.
-    #    4. Never treat missing data as a clear path or use it to justify movement.
-
-
+    #    Step 1: Check self.odometry.has_received_odometry before reading pose.
+    #    Step 2: Get front clearance by calling
+    #            self.lidar.get_latest_distance() from lidar.py.
+    #    Step 3: If odometry has not arrived or the LiDAR distance is None,
+    #            report that sensors are not ready.
+    #    Step 4: Never interpret unavailable sensor data as a clear path.
+    #
     # control_cycle()
-    #    1. Ask whether the required sensor data is ready.
-    #       - If not ready, request a stop and wait for the next timer cycle.
-    #    2. Read the current position and orientation from the odometry tracker.
-    #    3. Check whether the robot has reached its goal.
-    #       - If reached, change state to GOAL_REACHED, stop, and do not resume
-    #         movement unless a new goal is provided.
-    #    4. Read the latest front-obstacle distance from the LiDAR sensor.
-    #    5. Choose the next action based on the navigation state and obstacle
-    #       distance.
-    #       - Clear path: use the goal-navigation outline.
-    #       - Obstacle detected: use the obstacle-handling outline.
-    #       - Invalid reading or unsupported state: stop safely.
-
-
+    #    Step 1: Call sensors_are_ready(). If it reports not ready, call
+    #            publish_stop() and end this timer callback.
+    #    Step 2: Read pose using self.odometry.get_position() and
+    #            self.odometry.get_orientation() from odometry.py.
+    #    Step 3: On the first ready cycle, save the current pose as the start
+    #            pose and calculate goal_position by projecting
+    #            self.goal_distance along the starting heading.
+    #    Step 4: Call has_reached_goal() with the current position.
+    #    Step 5: If the goal is reached, set navigation_state to GOAL_REACHED,
+    #            call publish_stop(), and end this cycle.
+    #    Step 6: Read clearance using self.lidar.get_latest_distance() from
+    #            lidar.py and compare it with a named safety threshold.
+    #    Step 7: If the state is GO_TO_GOAL, call navigate_toward_goal() when
+    #            clearance is above the threshold; otherwise call
+    #            handle_obstacle().
+    #    Step 8: If the state is WALL_FOLLOW, call handle_obstacle() to
+    #            continue avoidance or rejoin the goal path.
+    #    Step 9: For an unsupported state or invalid sensor value, call
+    #            publish_stop() instead of publishing a movement command.
+    #
     # has_reached_goal(current_position)
-    #    1. Compare the current position with the target position.
-    #    2. Calculate the remaining distance to the target.
-    #    3. Compare it with a chosen goal tolerance that accounts for sensor and
-    #       odometry variation.
-    #    4. Report whether the robot is close enough to consider the goal reached.
-
-
+    #    Step 1: Measure the Euclidean distance between current_position and
+    #            self.goal_position.
+    #    Step 2: Compare the remaining distance with a named goal tolerance
+    #            that accounts for odometry variation.
+    #    Step 3: Report whether the remaining distance is within that
+    #            tolerance.
+    #
     # navigate_toward_goal(current_position, current_orientation)
-    #    1. Calculate the direction from the current position to the target.
-    #    2. Calculate the difference between the desired direction and current
-    #       orientation, accounting for angle wraparound.
-    #    3. Use the heading difference to decide how to steer toward the goal.
-    #    4. Select safe forward and turning speeds; reduce or stop forward motion
-    #       when alignment or obstacle clearance requires it.
-    #    5. Send the resulting movement command through the command publisher.
-
-
+    #    Step 1: Calculate the bearing from current_position to
+    #            self.goal_position.
+    #    Step 2: Subtract current_orientation from the bearing and normalize
+    #            the angular error so the robot turns along the shortest path.
+    #    Step 3: Choose safe linear and angular velocities from the heading
+    #            error; limit forward speed when the robot is poorly aligned.
+    #    Step 4: Put the velocities in a geometry_msgs.msg.Twist message.
+    #    Step 5: Publish the command with self.command_publisher to /cmd_vel.
+    #
     # handle_obstacle(current_position, current_orientation, lidar_distance)
-    #    1. Stop or slow before beginning an avoidance maneuver.
-    #    2. Record the current position as the obstacle hit point when avoidance
-    #       starts.
-    #    3. Provide the current pose, LiDAR information, and goal information to
-    #       the obstacle-avoidance logic in obstacle_avoidance.py.
-    #    4. Follow its decision to continue wall following or leave the obstacle
-    #       and return to the goal path.
-    #    5. If avoidance logic or sensor data is unavailable or invalid, remain
-    #       stopped rather than choosing an unverified movement direction.
-
-
+    #    Step 1: When starting avoidance from GO_TO_GOAL, save current_position
+    #            in self.obstacle_hit_point and set navigation_state to
+    #            WALL_FOLLOW.
+    #    Step 2: Use the obstacle-avoidance logic in obstacle_avoidance.py to
+    #            decide whether to keep following the boundary or return to
+    #            the goal.
+    #    Step 3: Pass the existing self.lidar and self.odometry instances,
+    #            current pose, and goal/hit-point information to that logic.
+    #    Step 4: Implement obstacle_avoidance.py's current comment-only outline
+    #            before relying on it to make or command avoidance decisions.
+    #    Step 5: lidar.py currently exposes only the closest front-facing
+    #            distance through self.lidar.get_latest_distance(), not
+    #            left/right scan sectors. Add a suitable LiDAR accessor before
+    #            implementing wall following that needs directional ranges.
+    #    Step 6: When the avoidance logic reports its leave condition, clear
+    #            the hit point, set navigation_state to GO_TO_GOAL, and steer
+    #            toward the goal.
+    #    Step 7: If required information is unavailable, call publish_stop().
+    #
     # publish_stop()
-    #    1. Create a zero-velocity command.
-    #    2. Publish it so the robot stops for missing data, goal completion,
-    #       unsafe conditions, or shutdown.
-
-
+    #    Step 1: Create a geometry_msgs.msg.Twist command with zero linear and
+    #            angular velocity.
+    #    Step 2: Publish it with self.command_publisher.
+    #    Step 3: Call this method for not-ready sensors, goal completion,
+    #            unsafe conditions, unsupported states, and shutdown.
+    #
     # shutdown_controller()
-    #    1. Publish a final stop command.
-    #    2. Release controller-owned timers, publishers, subscriptions, and sensor
-    #       nodes as appropriate.
-    #    3. Leave executor management and ROS 2 initialization/shutdown to main.py.
+    #    Step 1: Call publish_stop() before releasing resources.
+    #    Step 2: Cancel and destroy any controller timer.
+    #    Step 3: Destroy self.lidar and self.odometry only if this controller
+    #            owns their lifecycle.
+    #    Step 4: Leave executor management and rclpy initialization/shutdown
+    #            in main.py, which adds the controller and both sensor nodes
+    #            to its SingleThreadedExecutor.

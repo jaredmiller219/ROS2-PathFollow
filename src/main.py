@@ -9,6 +9,9 @@ prompts for a forward goal distance in meters at startup, but does not use it
 for navigation or publish movement commands yet.
 """
 
+import math
+from robot_controller import RobotController
+from rclpy.executors import SingleThreadedExecutor
 import rclpy
 
 
@@ -17,32 +20,31 @@ def ask_for_goal_distance():
     while True:
         try:
             # ask for a forward goal distance in meters
-            # Note to the user to only input ONE number.
-            # cast it as a float
-            pass
+            goal_input = input("Input the goal distance (must be ONE number): ")
+            goal_distance = float(goal_input)
         except ValueError:
-            # tell the user to enter a valid number
-            # then continue
-            pass
+            print("Please enter one valid number.")
+            continue
 
-        # Check if the distance is finite AND non-negative
-            # import math
-        # if it is return it.
-        # otherwise, print an error message to be finit and non-negative.
+        if math.isfinite(goal_distance) and goal_distance >= 0:
+            return goal_distance
+
+        print("Please enter a finite, non-negative distance.")
 
 
 def main(args=None):
     # Initialize the ROS 2 system
     rclpy.init(args=args)
 
-    # Create the controller
-        # make sure to import this: from robot_controller import RobotController
-    # Then get the goal distance from the user input 
-    #   and store it in the controller as an attribute called goal_distance.
+    goal_distance = ask_for_goal_distance()
+    robot_controller = RobotController(goal_distance)
 
     # create a single-threaded executor to manage the nodes
-    ## make sure to import this: from rclpy.executors import SingleThreadedExecutor
     # then add each node to the executor
+    executor = SingleThreadedExecutor()
+    executor.add_node(robot_controller)
+    executor.add_node(robot_controller.lidar)
+    executor.add_node(robot_controller.odometry)
 
     # Keep the sensor nodes running until interrupted.
     try:
