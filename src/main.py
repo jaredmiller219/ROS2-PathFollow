@@ -52,10 +52,7 @@ def main(args=None):
         for node in nodes:
             executor.add_node(node)
 
-        robot_controller.get_logger().info(
-            "Starting LiDAR and odometry; forward motion begins after both "
-            "sensors provide data."
-        )
+        robot_controller.start()
         executor.spin()
 
     except KeyboardInterrupt:

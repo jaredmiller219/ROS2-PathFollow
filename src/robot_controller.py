@@ -11,6 +11,7 @@ and make navigation decisions based on the information received from these senso
 # performs overall shutdown and cleanup.
 
 import math
+import time
 
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
@@ -24,7 +25,8 @@ class RobotController(Node):
     OBSTACLE_DISTANCE_THRESHOLD = 0.13
     GOAL_TOLERANCE = 0.1
     CONTROL_PERIOD_SECONDS = 0.1
-    MAX_LINEAR_SPEED = 0.15
+    SENSOR_START_TIMEOUT_SECONDS = 10.0
+    MAX_LINEAR_SPEED = 1.0
     APPROACH_SPEED_GAIN = 0.5
 
     def __init__(self, goal_distance: float):
@@ -45,11 +47,24 @@ class RobotController(Node):
 
         self.navigation_state = "WAITING_FOR_SENSORS"
         self.obstacle_avoidance = None
+        self.sensor_wait_started_at = time.monotonic()
+        self.motion_started = False
 
         self.command_publisher = self.create_publisher(Twist, "/cmd_vel", 10)
+        self.control_timer = None
+
+    def start(self) -> None:
+        """Start periodic movement control after main adds nodes to its executor."""
+        if self.control_timer is not None:
+            return
+
+        self.sensor_wait_started_at = time.monotonic()
         self.control_timer = self.create_timer(
             self.CONTROL_PERIOD_SECONDS,
             self.movement_callback,
+        )
+        self.get_logger().info(
+            "Robot controller started; waiting for LiDAR and odometry before moving."
         )
 
     def sensors_are_ready(self) -> bool:
@@ -65,9 +80,21 @@ class RobotController(Node):
         )
 
     def movement_callback(self) -> None:
-        """Check sensors and publish the next movement command on each timer tick."""
+        """Drive toward the entered odometry goal while monitoring LiDAR."""
+        if self.navigation_state in ("GOAL_REACHED", "STOPPED"):
+            self.publish_stop()
+            return
+
         if not self.sensors_are_ready():
             self.publish_stop()
+            if (
+                time.monotonic() - self.sensor_wait_started_at
+                >= self.SENSOR_START_TIMEOUT_SECONDS
+            ):
+                self.navigation_state = "STOPPED"
+                self.get_logger().error(
+                    "Sensor startup timed out; robot will remain stopped."
+                )
             return
 
         current_position = self.odometry.get_position()
@@ -88,10 +115,15 @@ class RobotController(Node):
                 obstacle_distance_threshold=self.OBSTACLE_DISTANCE_THRESHOLD,
             )
             self.navigation_state = "GO_TO_GOAL"
+            self.get_logger().info(
+                f"Sensor data ready. Driving forward toward the "
+                f"{self.goal_distance:.2f} m goal."
+            )
 
         if self.has_reached_goal(current_position):
             self.navigation_state = "GOAL_REACHED"
             self.publish_stop()
+            self.get_logger().info("Goal distance reached; robot stopped.")
             return
 
         lidar_distance = self.lidar.get_latest_distance()
@@ -100,6 +132,9 @@ class RobotController(Node):
                 self.handle_obstacle()
             else:
                 self.navigate_toward_goal(lidar_distance)
+                if not self.motion_started:
+                    self.motion_started = True
+                    self.get_logger().info("Publishing forward motion on /cmd_vel.")
         elif self.navigation_state == "WALL_FOLLOW":
             self.handle_obstacle()
         elif self.navigation_state == "GOAL_REACHED":
@@ -131,6 +166,12 @@ class RobotController(Node):
             return
         if lidar_distance is None or math.isnan(lidar_distance):
             self.publish_stop()
+            return
+        if lidar_distance == -math.inf or lidar_distance < 0.0:
+            self.publish_stop()
+            self.get_logger().error(
+                "LiDAR returned an invalid clearance; robot stopped."
+            )
             return
 
         command = Twist()
@@ -174,8 +215,9 @@ class RobotController(Node):
     def shutdown_controller(self) -> None:
         """Stop the robot and release resources owned by this controller."""
         self.publish_stop()
-        self.control_timer.cancel()
-        self.destroy_timer(self.control_timer)
+        if self.control_timer is not None:
+            self.control_timer.cancel()
+            self.destroy_timer(self.control_timer)
         self.lidar.destroy_node()
         self.odometry.destroy_node()
         self.destroy_node()
