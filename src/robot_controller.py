@@ -23,7 +23,7 @@ from obstacle_avoidance import ObstacleAvoidance
 
 class RobotController(Node):
     # lidar.py reports distance from the bumper after applying its sensor offset.
-    OBSTACLE_DISTANCE_THRESHOLD = 0.3
+    OBSTACLE_DISTANCE_THRESHOLD = 0.13
     GOAL_TOLERANCE = 0.03
     CONTROL_PERIOD_SECONDS = 0.1
     # TurtleBot 4 LiDAR can take a while to spin up, especially over Wi-Fi.
@@ -84,11 +84,6 @@ class RobotController(Node):
 
         self.navigation_state = "WAITING_FOR_SENSORS"
         self.obstacle_avoidance = None
-        self.obstacle_threshold_reported = False
-        self.sensor_wait_reported = False
-        self.sensors_ready_reported = False
-        self.forward_command_reported = False
-        self.command_subscriber_warning_reported = False
 
         self.command_publisher = self.create_publisher(Twist, "/cmd_vel", 10)
         self.control_timer = None
@@ -102,36 +97,16 @@ class RobotController(Node):
             self.CONTROL_PERIOD_SECONDS,
             self.movement_callback,
         )
-        self.get_logger().info("Controller running; waiting for sensor data.")
 
     def sensors_are_ready(self) -> bool:
         """Return whether odometry and a usable front-distance reading exist."""
         distance = self.lidar.get_latest_distance()
-        odometry_ready = self.odometry.has_received_odometry
-        lidar_ready = (
-            distance is not None
+        return (
+            self.odometry.has_received_odometry
+            and distance is not None
             and not math.isnan(distance)
             and distance != -math.inf
         )
-
-        if not odometry_ready or not lidar_ready:
-            if not self.sensor_wait_reported:
-                missing = []
-                if not odometry_ready:
-                    missing.append("/odom")
-                if not lidar_ready:
-                    missing.append("/scan")
-                self.get_logger().warning(
-                    f"Waiting for sensor data on: {', '.join(missing)}"
-                )
-                self.sensor_wait_reported = True
-            return False
-
-        if not self.sensors_ready_reported:
-            self.get_logger().info("LiDAR and odometry data received.")
-            self.sensors_ready_reported = True
-            self.sensor_wait_reported = False
-        return True
 
     def movement_callback(self) -> None:
         """Drive toward the entered odometry goal while monitoring LiDAR."""
@@ -168,15 +143,6 @@ class RobotController(Node):
             return
 
         lidar_distance = self.lidar.get_latest_distance()
-        if (
-            lidar_distance <= self.OBSTACLE_DISTANCE_THRESHOLD
-            and not self.obstacle_threshold_reported
-        ):
-            print(
-                f"Obstacle is {lidar_distance:.2f} m away "
-                f"(threshold: {self.OBSTACLE_DISTANCE_THRESHOLD:.2f} m)."
-            )
-            self.obstacle_threshold_reported = True
 
         if self.navigation_state == "GO_TO_GOAL":
             if lidar_distance <= self.OBSTACLE_DISTANCE_THRESHOLD:
@@ -244,20 +210,6 @@ class RobotController(Node):
         )
 
         self.command_publisher.publish(command)
-        if (
-            self.command_publisher.get_subscription_count() == 0
-            and not self.command_subscriber_warning_reported
-        ):
-            self.get_logger().warning(
-                "No /cmd_vel subscriber is connected; the robot may not receive "
-                "movement commands."
-            )
-            self.command_subscriber_warning_reported = True
-        if not self.forward_command_reported:
-            self.get_logger().info(
-                f"Forward command sent on /cmd_vel: {command.linear.x:.2f} m/s."
-            )
-            self.forward_command_reported = True
 
     def handle_obstacle(self) -> None:
         """Update obstacle state and stop when safe wall-follow data is absent."""
@@ -273,7 +225,6 @@ class RobotController(Node):
 
         self.navigation_state = avoidance_state
         if avoidance_state == "GO_TO_GOAL":
-            self.obstacle_threshold_reported = False
             self.navigate_toward_goal(self.lidar.get_latest_distance())
             return
 
