@@ -84,6 +84,7 @@ class RobotController(Node):
 
         self.navigation_state = "WAITING_FOR_SENSORS"
         self.obstacle_avoidance = None
+        self.obstacle_threshold_reported = False
 
         self.command_publisher = self.create_publisher(Twist, "/cmd_vel", 10)
         self.control_timer = None
@@ -145,6 +146,16 @@ class RobotController(Node):
             return
 
         lidar_distance = self.lidar.get_latest_distance()
+        if (
+            lidar_distance <= self.OBSTACLE_DISTANCE_THRESHOLD
+            and not self.obstacle_threshold_reported
+        ):
+            print(
+                f"Obstacle is {lidar_distance:.2f} m away "
+                f"(threshold: {self.OBSTACLE_DISTANCE_THRESHOLD:.2f} m)."
+            )
+            self.obstacle_threshold_reported = True
+
         if self.navigation_state == "GO_TO_GOAL":
             if lidar_distance <= self.OBSTACLE_DISTANCE_THRESHOLD:
                 self.handle_obstacle()
@@ -226,6 +237,7 @@ class RobotController(Node):
 
         self.navigation_state = avoidance_state
         if avoidance_state == "GO_TO_GOAL":
+            self.obstacle_threshold_reported = False
             self.navigate_toward_goal(self.lidar.get_latest_distance())
             return
 
