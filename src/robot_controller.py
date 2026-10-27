@@ -11,7 +11,6 @@ and make navigation decisions based on the information received from these senso
 # performs overall shutdown and cleanup.
 
 import math
-import time
 
 import rclpy
 from geometry_msgs.msg import Twist
@@ -27,7 +26,6 @@ class RobotController(Node):
     OBSTACLE_DISTANCE_THRESHOLD = 0.13
     GOAL_TOLERANCE = 0.1
     CONTROL_PERIOD_SECONDS = 0.1
-    SENSOR_START_TIMEOUT_SECONDS = 10.0
     MAX_LINEAR_SPEED = 1.0
     APPROACH_SPEED_GAIN = 0.5
 
@@ -81,7 +79,6 @@ class RobotController(Node):
 
         self.navigation_state = "WAITING_FOR_SENSORS"
         self.obstacle_avoidance = None
-        self.sensor_wait_started_at = time.monotonic()
 
         self.command_publisher = self.create_publisher(Twist, "/cmd_vel", 10)
         self.control_timer = None
@@ -91,7 +88,6 @@ class RobotController(Node):
         if self.control_timer is not None:
             return
 
-        self.sensor_wait_started_at = time.monotonic()
         self.control_timer = self.create_timer(
             self.CONTROL_PERIOD_SECONDS,
             self.movement_callback,
@@ -117,11 +113,6 @@ class RobotController(Node):
 
         if not self.sensors_are_ready():
             self.publish_stop()
-            if (
-                time.monotonic() - self.sensor_wait_started_at
-                >= self.SENSOR_START_TIMEOUT_SECONDS
-            ):
-                self.navigation_state = "STOPPED"
             return
 
         current_position = self.odometry.get_position()
