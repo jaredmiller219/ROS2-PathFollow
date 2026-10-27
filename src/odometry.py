@@ -30,7 +30,7 @@ class OdometryTracker(Node):
             Odometry,
             '/odom',
             self.odometry_callback,
-            10
+            rclpy.qos.qos_profile_sensor_data
         )
 
     def get_position(self):
