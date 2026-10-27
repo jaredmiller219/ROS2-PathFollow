@@ -13,7 +13,9 @@ and make navigation decisions based on the information received from these senso
 import math
 import time
 
+import rclpy
 from geometry_msgs.msg import Twist
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 
 from lidar import LidarSensor
@@ -28,6 +30,38 @@ class RobotController(Node):
     SENSOR_START_TIMEOUT_SECONDS = 10.0
     MAX_LINEAR_SPEED = 1.0
     APPROACH_SPEED_GAIN = 0.5
+
+    @classmethod
+    def run(cls, goal_distance: float, args=None) -> None:
+        """Initialize ROS, run the controller and sensors, then clean up."""
+        executor = None
+        robot_controller = None
+        ros_initialized = False
+
+        try:
+            rclpy.init(args=args)
+            ros_initialized = True
+
+            robot_controller = cls(goal_distance)
+            executor = SingleThreadedExecutor()
+            for node in (
+                robot_controller.lidar,
+                robot_controller.odometry,
+                robot_controller,
+            ):
+                executor.add_node(node)
+
+            robot_controller.start()
+            executor.spin()
+        except KeyboardInterrupt:
+            print("Navigation interrupted by user.")
+        finally:
+            if executor is not None:
+                executor.shutdown()
+            if robot_controller is not None:
+                robot_controller.shutdown_controller()
+            if ros_initialized and rclpy.ok():
+                rclpy.shutdown()
 
     def __init__(self, goal_distance: float):
         if not isinstance(goal_distance, (int, float)) or not math.isfinite(goal_distance) or goal_distance < 0:

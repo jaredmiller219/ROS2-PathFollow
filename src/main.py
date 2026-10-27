@@ -10,9 +10,6 @@ requested forward goal distance.
 
 import math
 
-import rclpy
-from rclpy.executors import SingleThreadedExecutor
-
 from robot_controller import RobotController
 
 
@@ -34,37 +31,8 @@ def ask_for_goal_distance():
 
 
 def main(args=None):
-    robot_controller = None
-    executor = None
-    try:
-        goal_distance = ask_for_goal_distance()
-
-        # Initialize ROS only after obtaining valid user input.
-        rclpy.init(args=args)
-
-        robot_controller = RobotController(goal_distance)
-        executor = SingleThreadedExecutor()
-        nodes = (
-            robot_controller.lidar,
-            robot_controller.odometry,
-            robot_controller,
-        )
-        for node in nodes:
-            executor.add_node(node)
-
-        robot_controller.start()
-        executor.spin()
-
-    except KeyboardInterrupt:
-        print("Navigation interrupted by user.")
-
-    finally:
-        if executor is not None:
-            executor.shutdown()
-        if robot_controller is not None:
-            robot_controller.shutdown_controller()
-        if rclpy.ok():
-            rclpy.shutdown()
+    goal_distance = ask_for_goal_distance()
+    RobotController.run(goal_distance, args=args)
 
 
 if __name__ == '__main__':
