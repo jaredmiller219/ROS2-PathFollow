@@ -23,7 +23,7 @@ from obstacle_avoidance import ObstacleAvoidance
 
 class RobotController(Node):
     # lidar.py reports distance from the bumper after applying its sensor offset.
-    OBSTACLE_DISTANCE_THRESHOLD = 0.13
+    OBSTACLE_DISTANCE_THRESHOLD = 0.3
     GOAL_TOLERANCE = 0.03
     CONTROL_PERIOD_SECONDS = 0.1
     # TurtleBot 4 LiDAR can take a while to spin up, especially over Wi-Fi.

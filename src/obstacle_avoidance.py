@@ -20,7 +20,7 @@ class ObstacleAvoidance:
         odometry: OdometryTracker,
         start_position: tuple[float, float],
         goal_position: tuple[float, float],
-        obstacle_distance_threshold: float = 0.13,
+        obstacle_distance_threshold: float = 0.3,
     ):
         if (
             not math.isfinite(obstacle_distance_threshold)
