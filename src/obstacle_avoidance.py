@@ -79,12 +79,23 @@ class ObstacleAvoidance:
         return distance_from_line <= self.m_line_tolerance
 
 
+    def robot_leave(self, current_position: tuple[float, float]) -> bool:
     # Define a function that accepts the robot's current (x, y) coordinates to decide when to leave:
+        if self.obstacle_hit_point == None: return False
         # Check if a hit point was ever recorded:
+
             # If no hit point exists (None), return False immediately
+
         # Call your distance function to find how far the robot's current position is from the goal
+        current_position_distance = self.distance_to_goal(current_position) 
         # Call your distance function to find how far the original obstacle hit point was from the goal
+        hit_position = self.obstacle_hit_point(current_position) 
         # Check if the robot is currently crossing the M-line (Call your M-line check function)
+        if self.check_motion_line(current_position) and (current_position_distance < hit_position): 
+            return True
+        
+        else:
+            return False
         # Check if the current distance to the goal is strictly less than the hit point's distance to the goal
         # Evaluate both checks together:
             # If BOTH conditions are met, return True (safe to leave the obstacle and head back to the goal)
