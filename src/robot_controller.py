@@ -14,7 +14,7 @@ import math
 
 import rclpy
 from geometry_msgs.msg import Twist
-from rclpy.executors import SingleThreadedExecutor
+from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.node import Node
 
 from lidar import LidarSensor
@@ -26,7 +26,12 @@ class RobotController(Node):
     OBSTACLE_DISTANCE_THRESHOLD = 0.13
     GOAL_TOLERANCE = 0.03
     CONTROL_PERIOD_SECONDS = 0.1
-    MAX_LINEAR_SPEED = 1.0
+    # TurtleBot 4 LiDAR can take a while to spin up, especially over Wi-Fi.
+    SENSOR_START_TIMEOUT_SECONDS = 30.0
+    # Conservative test speed; the TurtleBot 4 base tops out around 0.3 m/s.
+    MAX_LINEAR_SPEED = 0.2
+    # Smallest forward command that still reliably moves the base.
+    MIN_LINEAR_SPEED = 0.03
     APPROACH_SPEED_GAIN = 0.5
 
     @classmethod
@@ -51,13 +56,13 @@ class RobotController(Node):
 
             robot_controller.start()
             executor.spin()
-        except KeyboardInterrupt:
-            pass
+        except (KeyboardInterrupt, ExternalShutdownException):
+            print("Navigation interrupted by user.")
         finally:
-            if executor is not None:
-                executor.shutdown()
             if robot_controller is not None:
                 robot_controller.shutdown_controller()
+            if executor is not None:
+                executor.shutdown()
             if ros_initialized and rclpy.ok():
                 rclpy.shutdown()
 
@@ -153,21 +158,22 @@ class RobotController(Node):
             self.publish_stop()
 
     def has_reached_goal(self, current_position: tuple[float, float]) -> bool:
-        """Return whether forward odometry has reached the requested distance."""
-        return self.remaining_goal_distance(current_position) <= self.GOAL_TOLERANCE
+        """Return whether the robot has travelled the goal distance.
 
-    def remaining_goal_distance(self, current_position: tuple[float, float]) -> float:
-        """Measure remaining travel projected along the initial forward heading."""
+        Progress is measured along the starting heading, so sideways drift
+        from driving straight cannot make the robot miss the goal and keep
+        going past it.
+        """
         if self.start_position is None or self.start_orientation is None:
-            return self.goal_distance
+            return False
 
-        displacement_x = current_position[0] - self.start_position[0]
-        displacement_y = current_position[1] - self.start_position[1]
-        forward_progress = (
-            displacement_x * math.cos(self.start_orientation)
-            + displacement_y * math.sin(self.start_orientation)
+        dx = current_position[0] - self.start_position[0]
+        dy = current_position[1] - self.start_position[1]
+        progress = (
+            dx * math.cos(self.start_orientation)
+            + dy * math.sin(self.start_orientation)
         )
-        return max(0.0, self.goal_distance - forward_progress)
+        return progress >= self.goal_distance - self.GOAL_TOLERANCE
 
     def navigate_toward_goal(
         self,
@@ -182,24 +188,26 @@ class RobotController(Node):
             return
         if lidar_distance == -math.inf or lidar_distance < 0.0:
             self.publish_stop()
+            self.get_logger().error(
+                "LiDAR returned an invalid clearance; robot stopped."
+            )
+            return
+        # handle_obstacle() can call this after the avoidance logic reports
+        # GO_TO_GOAL, so re-check clearance here instead of assuming it.
+        if lidar_distance <= self.OBSTACLE_DISTANCE_THRESHOLD:
+            self.publish_stop()
             return
 
         command = Twist()
-        current_position = self.odometry.get_position()
-        remaining_goal_distance = self.remaining_goal_distance(current_position)
-        # Taper speed near both the requested travel distance and the obstacle
-        # stop clearance to reduce overshoot between control updates.
+        # Approach slowly as the bumper clearance nears 13 cm to reduce
+        # overshoot between LiDAR scans and control updates, but never drop
+        # below the speed the base needs to actually move.
+        speed = self.APPROACH_SPEED_GAIN * (
+            lidar_distance - self.OBSTACLE_DISTANCE_THRESHOLD
+        )
         command.linear.x = max(
-            0.0,
-            min(
-                self.MAX_LINEAR_SPEED,
-                self.APPROACH_SPEED_GAIN * remaining_goal_distance,
-                self.APPROACH_SPEED_GAIN
-                * max(
-                    0.0,
-                    lidar_distance - self.OBSTACLE_DISTANCE_THRESHOLD,
-                ),
-            ),
+            self.MIN_LINEAR_SPEED,
+            min(self.MAX_LINEAR_SPEED, speed),
         )
 
         self.command_publisher.publish(command)
@@ -230,10 +238,23 @@ class RobotController(Node):
 
     def shutdown_controller(self) -> None:
         """Stop the robot and release resources owned by this controller."""
-        self.publish_stop()
+        # After Ctrl+C the ROS context may already be shut down, so each step
+        # is guarded to let the rest of the cleanup still run.
+        try:
+            self.publish_stop()
+        except Exception as error:
+            print(f"Could not publish final stop command: {error}")
+
         if self.control_timer is not None:
-            self.control_timer.cancel()
-            self.destroy_timer(self.control_timer)
-        self.lidar.destroy_node()
-        self.odometry.destroy_node()
-        self.destroy_node()
+            try:
+                self.control_timer.cancel()
+                self.destroy_timer(self.control_timer)
+            except Exception:
+                pass
+            self.control_timer = None
+
+        for node in (self.lidar, self.odometry, self):
+            try:
+                node.destroy_node()
+            except Exception:
+                pass
