@@ -21,13 +21,10 @@ def ask_for_goal_distance():
             goal_input = input("Input the goal distance (must be ONE number): ")
             goal_distance = float(goal_input)
         except ValueError:
-            print("Please enter one valid number.")
             continue
 
         if math.isfinite(goal_distance) and goal_distance >= 0:
             return goal_distance
-
-        print("Please enter a finite, non-negative distance.")
 
 
 def main(args=None):

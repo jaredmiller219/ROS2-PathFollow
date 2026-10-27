@@ -114,7 +114,7 @@ class LidarSensor(Node):
 
     def scan_callback(self, msg: LaserScan):
         """
-        Main trigger: Receives the scan, calculates the final distance, and logs it.
+        Receive a scan, update the latest front-obstacle distance, and return it.
         """
         ranges, angles = self.extract_scan_data(msg)
         final_distance = self.calculate_final_distance(
@@ -126,7 +126,5 @@ class LidarSensor(Node):
 
         # Store the latest distance for other parts of the system to access
         self.latest_distance = final_distance
-
-        self.get_logger().info(f"Distance to obstacle: {final_distance:.2f} meters")
 
         return final_distance
