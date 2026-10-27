@@ -93,21 +93,21 @@ class LidarSensor(Node):
         return final_distance
 
 
-def main(args=None):
-    """Run the LiDAR node and report the latest front-obstacle distance."""
-    rclpy.init(args=args)
+# def main(args=None):
+#     """Run the LiDAR node and report the latest front-obstacle distance."""
+#     rclpy.init(args=args)
 
-    try:
-        lidar = LidarSensor()
-        try:
-            rclpy.spin(lidar)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            lidar.destroy_node()
-    finally:
-        if rclpy.ok():
-            rclpy.shutdown()
+#     try:
+#         lidar = LidarSensor()
+#         try:
+#             rclpy.spin(lidar)
+#         except KeyboardInterrupt:
+#             pass
+#         finally:
+#             lidar.destroy_node()
+#     finally:
+#         if rclpy.ok():
+#             rclpy.shutdown()
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()

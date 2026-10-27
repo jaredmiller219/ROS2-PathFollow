@@ -19,7 +19,6 @@ from rclpy.node import Node
 
 from lidar import LidarSensor
 from odometry import OdometryTracker
-from obstacle_avoidance import ObstacleAvoidance
 
 class RobotController(Node):
     # lidar.py reports distance from the bumper after applying its sensor offset.
@@ -83,8 +82,6 @@ class RobotController(Node):
         self.goal_position = None
 
         self.navigation_state = "WAITING_FOR_SENSORS"
-        self.obstacle_avoidance = None
-
         self.command_publisher = self.create_publisher(Twist, "/cmd_vel", 10)
         self.control_timer = None
 
@@ -110,7 +107,11 @@ class RobotController(Node):
 
     def movement_callback(self) -> None:
         """Drive toward the entered odometry goal while monitoring LiDAR."""
-        if self.navigation_state in ("GOAL_REACHED", "STOPPED"):
+        if self.navigation_state in (
+            "GOAL_REACHED",
+            "STOPPED",
+            "OBSTACLE_STOPPED",
+        ):
             self.publish_stop()
             return
 
@@ -128,13 +129,6 @@ class RobotController(Node):
                 current_position[0] + self.goal_distance * math.cos(current_orientation),
                 current_position[1] + self.goal_distance * math.sin(current_orientation),
             )
-            self.obstacle_avoidance = ObstacleAvoidance(
-                self.lidar,
-                self.odometry,
-                self.start_position,
-                self.goal_position,
-                obstacle_distance_threshold=self.OBSTACLE_DISTANCE_THRESHOLD,
-            )
             self.navigation_state = "GO_TO_GOAL"
 
         if self.has_reached_goal(current_position):
@@ -144,17 +138,15 @@ class RobotController(Node):
 
         lidar_distance = self.lidar.get_latest_distance()
 
-        if self.navigation_state == "GO_TO_GOAL":
-            if lidar_distance <= self.OBSTACLE_DISTANCE_THRESHOLD:
-                self.handle_obstacle()
-            else:
-                self.navigate_toward_goal(lidar_distance)
-        elif self.navigation_state == "WALL_FOLLOW":
-            self.handle_obstacle()
-        elif self.navigation_state == "GOAL_REACHED":
+        if lidar_distance <= self.OBSTACLE_DISTANCE_THRESHOLD:
+            self.navigation_state = "OBSTACLE_STOPPED"
             self.publish_stop()
-        else:
-            self.publish_stop()
+            self.get_logger().warning(
+                "Obstacle detected within the stopping distance; robot stopped."
+            )
+            return
+
+        self.navigate_toward_goal(lidar_distance)
 
     def has_reached_goal(self, current_position: tuple[float, float]) -> bool:
         """Return whether the robot has travelled the goal distance.
@@ -191,8 +183,7 @@ class RobotController(Node):
                 "LiDAR returned an invalid clearance; robot stopped."
             )
             return
-        # handle_obstacle() can call this after the avoidance logic reports
-        # GO_TO_GOAL, so re-check clearance here instead of assuming it.
+        # Re-check clearance here so movement never relies on a stale reading.
         if lidar_distance <= self.OBSTACLE_DISTANCE_THRESHOLD:
             self.publish_stop()
             return
@@ -210,26 +201,6 @@ class RobotController(Node):
         )
 
         self.command_publisher.publish(command)
-
-    def handle_obstacle(self) -> None:
-        """Update obstacle state and stop when safe wall-follow data is absent."""
-
-        if self.obstacle_avoidance is None:
-            self.publish_stop()
-            return
-
-        avoidance_state = self.obstacle_avoidance.update_state()
-        if avoidance_state is None:
-            self.publish_stop()
-            return
-
-        self.navigation_state = avoidance_state
-        if avoidance_state == "GO_TO_GOAL":
-            self.navigate_toward_goal(self.lidar.get_latest_distance())
-            return
-
-        # Front-only clearance cannot determine a safe wall-following direction.
-        self.publish_stop()
 
     def publish_stop(self) -> None:
         """Publish a zero-velocity command."""
