@@ -74,7 +74,7 @@ class OdometryTracker(Node):
         # cos_yaw calculation: 1 - 2 * (y^2 + z^2)
         cos_yaw = 1.0 - (2.0 * (math.pow(pose.y, 2) + math.pow(pose.z, 2)))
 
-        # then return the arc tangent with both sin and cos to get the yaw angle arctan(sin_yaw, cos_yaw)
+        # return the arc tangent with both sin and cos to get the yaw angle 
         return math.atan2(sin_yaw, cos_yaw)
 
 
