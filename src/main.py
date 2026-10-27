@@ -44,9 +44,18 @@ def main(args=None):
 
         robot_controller = RobotController(goal_distance)
         executor = SingleThreadedExecutor()
-        executor.add_node(robot_controller)
-        executor.add_node(robot_controller.lidar)
-        executor.add_node(robot_controller.odometry)
+        nodes = (
+            robot_controller.lidar,
+            robot_controller.odometry,
+            robot_controller,
+        )
+        for node in nodes:
+            executor.add_node(node)
+
+        robot_controller.get_logger().info(
+            "Starting LiDAR and odometry; forward motion begins after both "
+            "sensors provide data."
+        )
         executor.spin()
 
     except KeyboardInterrupt:

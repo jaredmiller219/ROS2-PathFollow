@@ -49,7 +49,7 @@ class RobotController(Node):
         self.command_publisher = self.create_publisher(Twist, "/cmd_vel", 10)
         self.control_timer = self.create_timer(
             self.CONTROL_PERIOD_SECONDS,
-            self.control_cycle,
+            self.movement_callback,
         )
 
     def sensors_are_ready(self) -> bool:
@@ -64,8 +64,8 @@ class RobotController(Node):
             and distance != -math.inf
         )
 
-    def control_cycle(self) -> None:
-        """Run one sensor-driven navigation update."""
+    def movement_callback(self) -> None:
+        """Check sensors and publish the next movement command on each timer tick."""
         if not self.sensors_are_ready():
             self.publish_stop()
             return
