@@ -16,6 +16,9 @@ class RobotController(Node):
         self.lidar = LidarSensor()
         self.odometry = OdometryTracker()
 
+## While the distance to an object in front is greater than a value, move forwards.
+
+
 # Use the LidarSensor and OdometryTracker classes to implement navigation logic here.
 
 # Use the LiDAR distance information to detect obstacles

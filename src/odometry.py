@@ -65,11 +65,17 @@ class OdometryTracker(Node):
         """
         Extract orientation angle from odometry message.
         """
-        # get the quaternion, by using msg.pose.pose.orientation
-        # sin yaw is calculated as 2*(w*z + x*y)
-        # cos yaw is calculated as 1 - 2*(y^2 + z^2)
-        # then return the arc tangent with both sin and cos to get the yaw angle
-            ## arctan2(sin_yaw, cos_yaw)
+        # get the quaternion
+        pose = msg.pose.pose.orientation
+
+        # sin_yaw calculation: 2 * (w*z + x*y)
+        sin_yaw = 2.0 * ((pose.w * pose.z) + (pose.x * pose.y))
+
+        # cos_yaw calculation: 1 - 2 * (y^2 + z^2)
+        cos_yaw = 1.0 - (2.0 * (math.pow(pose.y, 2) + math.pow(pose.z, 2)))
+
+        # then return the arc tangent with both sin and cos to get the yaw angle arctan(sin_yaw, cos_yaw)
+        return math.atan2(sin_yaw, cos_yaw)
 
 
     def odometry_callback(self, msg: Odometry):
@@ -80,12 +86,12 @@ class OdometryTracker(Node):
         x = msg.pose.pose.position.x
         y = msg.pose.pose.position.y
         self.orientation = self._extract_orientation(msg)
+        self.has_received_odometry = True
         
         # First-frame guard
         if self.last_position is None:
             self.last_position = (x, y)
             self.position = (x, y)
-            self.has_received_odometry = True
             return
         
         # Calculate step distance safely now that last_position is valid
