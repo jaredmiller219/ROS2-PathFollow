@@ -35,6 +35,19 @@ To run the project entry point without opening a shell:
 docker compose -f docker/compose.yaml run --build --rm ros2-pathfollow python3 src/main.py
 ```
 
+### Test the LiDAR node
+
+Run the LiDAR subscriber on its own:
+
+```sh
+docker compose -f docker/compose.yaml run --build --rm ros2-pathfollow python3 src/lidar.py
+```
+
+The node logs when it has subscribed to `/scan` and prints the nearest
+front-obstacle distance whenever a scan message arrives. If it only reports
+that it is waiting, make sure a ROS 2 publisher is sending `sensor_msgs/msg/LaserScan`
+messages on `/scan` and that the node can communicate with that publisher.
+
 ## VS Code - Dev Containers
 
 ### Enable or disable detection

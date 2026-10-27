@@ -33,6 +33,7 @@ class LidarSensor(Node):
             self.scan_callback, 
             rclpy.qos.qos_profile_sensor_data
         )
+        self.get_logger().info("Subscribed to /scan; waiting for LiDAR messages.")
 
     def extract_scan_data(self, msg: LaserScan):
         """
@@ -85,7 +86,9 @@ class LidarSensor(Node):
         # Store the latest distance for other parts of the system to access
         self.latest_distance = final_distance
 
-        print(f"Distance to obstacle: {final_distance:.2f} meters", flush=True)
+        self.get_logger().info(
+            f"Distance to obstacle: {final_distance:.2f} meters"
+        )
 
         return final_distance
 
