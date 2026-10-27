@@ -20,11 +20,21 @@ class ObstacleAvoidance:
         odometry: OdometryTracker,
         start_position: tuple[float, float],
         goal_position: tuple[float, float],
+        obstacle_distance_threshold: float = 0.5,
     ):
+        if (
+            not math.isfinite(obstacle_distance_threshold)
+            or obstacle_distance_threshold < 0
+        ):
+            raise ValueError(
+                "obstacle_distance_threshold must be finite and non-negative"
+            )
+
         self.lidar = lidar
         self.odometry = odometry
         self.start_position = start_position
         self.goal_position = goal_position
+        self.obstacle_distance_threshold = obstacle_distance_threshold
 
         x_start, y_start = start_position
         x_goal, y_goal = goal_position
@@ -53,7 +63,8 @@ class ObstacleAvoidance:
         denominator = math.hypot(self.line_a, self.line_b)
 
         # A zero-length start-to-goal line has no direction or distinct M-line.
-        if denominator == 0.0: return False
+        if denominator == 0.0:
+            return False
 
         distance_from_line = numerator / denominator
 
@@ -64,45 +75,40 @@ class ObstacleAvoidance:
 
 
     def robot_leave(self, current_position: tuple[float, float]) -> bool:
-    # Define a function that accepts the robot's current (x, y) coordinates to decide when to leave:
-        if self.obstacle_hit_point == None: return False
-        # Call your distance function to find how far the robot's current position is from the goal
-        current_position_distance = self.distance_to_goal(current_position) 
-        # Call your distance function to find how far the original obstacle hit point was from the goal
-        hit_position = self.obstacle_hit_point(current_position) 
-        # Check if the robot is currently crossing the M-line (Call your M-line check function)
-        if self.check_motion_line(current_position) and (current_position_distance < hit_position): 
-            return True
-        
-        else:
+        if self.obstacle_hit_point is None:
             return False
+
+        current_distance = self.distance_to_goal(current_position)
+        hit_distance = self.distance_to_goal(self.obstacle_hit_point)
+        return (
+            self.check_motion_line(current_position)
+            and current_distance < hit_distance
+        )
     
     def update_state(self) -> str | None:
-            """Update the avoidance state from current sensors; return None if unready."""
-            if not self.odometry.has_received_odometry:
-                return None
+        """Update avoidance state from current sensors; return None if unready."""
+        if not self.odometry.has_received_odometry:
+            return None
 
-            lidar_distance = self.lidar.get_latest_distance()
-            if (lidar_distance is None or math.isnan(lidar_distance) or lidar_distance == -math.inf):
-                return None
+        lidar_distance = self.lidar.get_latest_distance()
+        if (
+            lidar_distance is None
+            or math.isnan(lidar_distance)
+            or lidar_distance == -math.inf
+        ):
+            return None
 
-            current_position = self.odometry.get_position()
+        current_position = self.odometry.get_position()
 
-            if self.state == "GO_TO_GOAL":
-                if lidar_distance <= self.obstacle_distance_threshold:
-                    self.obstacle_hit_point = current_position
-                    self.state = "WALL_FOLLOW"
-            
-            elif self.state == "WALL_FOLLOW":
-                if (self.obstacle_hit_point is not None
-                    and self.check_motion_line(current_position)
-                    and self.distance_to_goal(current_position)
-                    < self.distance_to_goal(self.obstacle_hit_point)
-                ):
-                    self.obstacle_hit_point = None
-                    self.state = "GO_TO_GOAL"
-            
-            else:
-                raise ValueError(f"Unsupported obstacle-avoidance state: {self.state}")
+        if self.state == "GO_TO_GOAL":
+            if lidar_distance <= self.obstacle_distance_threshold:
+                self.obstacle_hit_point = current_position
+                self.state = "WALL_FOLLOW"
+        elif self.state == "WALL_FOLLOW":
+            if self.robot_leave(current_position):
+                self.obstacle_hit_point = None
+                self.state = "GO_TO_GOAL"
+        else:
+            raise ValueError(f"Unsupported obstacle-avoidance state: {self.state}")
 
-            return self.state
+        return self.state

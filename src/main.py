@@ -1,12 +1,11 @@
 ## Main.py
 
 """
-Starts the sensor-only TurtleBot 4 program. The nodes collect LiDAR and
-odometry data.
+Starts the TurtleBot 4 navigation program. The executor runs the controller,
+LiDAR, and odometry nodes.
 
-The current program only collects and reports LiDAR and odometry data. It
-prompts for a forward goal distance in meters at startup, but does not use it
-for navigation or publish movement commands yet.
+The controller publishes movement commands while navigating toward the
+requested forward goal distance.
 """
 
 import math
@@ -46,22 +45,17 @@ def main(args=None):
     executor.add_node(robot_controller.lidar)
     executor.add_node(robot_controller.odometry)
 
-    # Keep the sensor nodes running until interrupted.
     try:
-        # Spin the executor (use .spin())
-        pass
+        executor.spin()
 
     except KeyboardInterrupt:
-        # print that the program was interrupted by the user
-        pass
+        print("Navigation interrupted by user.")
         
     finally:
-        # Shut down ROS 2 safely when the program ends 
-        # (shutdown the executor).
-        
-        # destroy the nodes to free resources
-        # first check if rclpy is ok, if so then shutdown rclpy
-        pass
+        executor.shutdown()
+        robot_controller.shutdown_controller()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

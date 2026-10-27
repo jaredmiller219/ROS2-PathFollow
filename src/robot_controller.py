@@ -17,8 +17,15 @@ from rclpy.node import Node
 
 from lidar import LidarSensor
 from odometry import OdometryTracker
+from obstacle_avoidance import ObstacleAvoidance
 
 class RobotController(Node):
+    OBSTACLE_DISTANCE_THRESHOLD = 0.5
+    GOAL_TOLERANCE = 0.1
+    CONTROL_PERIOD_SECONDS = 0.1
+    MAX_LINEAR_SPEED = 0.15
+    MAX_ANGULAR_SPEED = 0.8
+    HEADING_GAIN = 1.5
 
     def __init__(self, goal_distance: float):
         if not isinstance(goal_distance, (int, float)) or not math.isfinite(goal_distance) or goal_distance < 0:
@@ -37,92 +44,161 @@ class RobotController(Node):
         self.goal_position = None
 
         self.navigation_state = "WAITING_FOR_SENSORS"
-        self.obstacle_hit_point = None
+        self.obstacle_avoidance = None
 
         self.command_publisher = self.create_publisher(Twist, "/cmd_vel", 10)
+        self.control_timer = self.create_timer(
+            self.CONTROL_PERIOD_SECONDS,
+            self.control_cycle,
+        )
 
+    def sensors_are_ready(self) -> bool:
+        """Return whether odometry and a usable front-distance reading exist."""
+        if not self.odometry.has_received_odometry:
+            return False
 
-    # Implementation instructions for the remaining controller methods:
-    #
-    # sensors_are_ready()
-    #    Step 1: Check self.odometry.has_received_odometry before reading pose.
-    #    Step 2: Get front clearance by calling
-    #            self.lidar.get_latest_distance() from lidar.py.
-    #    Step 3: If odometry has not arrived or the LiDAR distance is None,
-    #            report that sensors are not ready.
-    #    Step 4: Never interpret unavailable sensor data as a clear path.
-    #
-    # control_cycle()
-    #    Step 1: Call sensors_are_ready(). If it reports not ready, call
-    #            publish_stop() and end this timer callback.
-    #    Step 2: Read pose using self.odometry.get_position() and
-    #            self.odometry.get_orientation() from odometry.py.
-    #    Step 3: On the first ready cycle, save the current pose as the start
-    #            pose and calculate goal_position by projecting
-    #            self.goal_distance along the starting heading.
-    #    Step 4: Call has_reached_goal() with the current position.
-    #    Step 5: If the goal is reached, set navigation_state to GOAL_REACHED,
-    #            call publish_stop(), and end this cycle.
-    #    Step 6: Read clearance using self.lidar.get_latest_distance() from
-    #            lidar.py and compare it with a named safety threshold.
-    #    Step 7: If the state is GO_TO_GOAL, call navigate_toward_goal() when
-    #            clearance is above the threshold; otherwise call
-    #            handle_obstacle().
-    #    Step 8: If the state is WALL_FOLLOW, call handle_obstacle() to
-    #            continue avoidance or rejoin the goal path.
-    #    Step 9: For an unsupported state or invalid sensor value, call
-    #            publish_stop() instead of publishing a movement command.
-    #
-    # has_reached_goal(current_position)
-    #    Step 1: Measure the Euclidean distance between current_position and
-    #            self.goal_position.
-    #    Step 2: Compare the remaining distance with a named goal tolerance
-    #            that accounts for odometry variation.
-    #    Step 3: Report whether the remaining distance is within that
-    #            tolerance.
-    #
-    # navigate_toward_goal(current_position, current_orientation)
-    #    Step 1: Calculate the bearing from current_position to
-    #            self.goal_position.
-    #    Step 2: Subtract current_orientation from the bearing and normalize
-    #            the angular error so the robot turns along the shortest path.
-    #    Step 3: Choose safe linear and angular velocities from the heading
-    #            error; limit forward speed when the robot is poorly aligned.
-    #    Step 4: Put the velocities in a geometry_msgs.msg.Twist message.
-    #    Step 5: Publish the command with self.command_publisher to /cmd_vel.
-    #
-    # handle_obstacle(current_position, current_orientation, lidar_distance)
-    #    Step 1: When starting avoidance from GO_TO_GOAL, save current_position
-    #            in self.obstacle_hit_point and set navigation_state to
-    #            WALL_FOLLOW.
-    #    Step 2: Use the obstacle-avoidance logic in obstacle_avoidance.py to
-    #            decide whether to keep following the boundary or return to
-    #            the goal.
-    #    Step 3: Pass the existing self.lidar and self.odometry instances,
-    #            current pose, and goal/hit-point information to that logic.
-    #    Step 4: Implement obstacle_avoidance.py's current comment-only outline
-    #            before relying on it to make or command avoidance decisions.
-    #    Step 5: lidar.py currently exposes only the closest front-facing
-    #            distance through self.lidar.get_latest_distance(), not
-    #            left/right scan sectors. Add a suitable LiDAR accessor before
-    #            implementing wall following that needs directional ranges.
-    #    Step 6: When the avoidance logic reports its leave condition, clear
-    #            the hit point, set navigation_state to GO_TO_GOAL, and steer
-    #            toward the goal.
-    #    Step 7: If required information is unavailable, call publish_stop().
-    #
-    # publish_stop()
-    #    Step 1: Create a geometry_msgs.msg.Twist command with zero linear and
-    #            angular velocity.
-    #    Step 2: Publish it with self.command_publisher.
-    #    Step 3: Call this method for not-ready sensors, goal completion,
-    #            unsafe conditions, unsupported states, and shutdown.
-    #
-    # shutdown_controller()
-    #    Step 1: Call publish_stop() before releasing resources.
-    #    Step 2: Cancel and destroy any controller timer.
-    #    Step 3: Destroy self.lidar and self.odometry only if this controller
-    #            owns their lifecycle.
-    #    Step 4: Leave executor management and rclpy initialization/shutdown
-    #            in main.py, which adds the controller and both sensor nodes
-    #            to its SingleThreadedExecutor.
+        distance = self.lidar.get_latest_distance()
+        return (
+            distance is not None
+            and not math.isnan(distance)
+            and distance != -math.inf
+        )
+
+    def control_cycle(self) -> None:
+        """Run one sensor-driven navigation update."""
+        if not self.sensors_are_ready():
+            self.publish_stop()
+            return
+
+        current_position = self.odometry.get_position()
+        current_orientation = self.odometry.get_orientation()
+
+        if self.goal_position is None:
+            self.start_position = current_position
+            self.start_orientation = current_orientation
+            self.goal_position = (
+                current_position[0] + self.goal_distance * math.cos(current_orientation),
+                current_position[1] + self.goal_distance * math.sin(current_orientation),
+            )
+            self.obstacle_avoidance = ObstacleAvoidance(
+                self.lidar,
+                self.odometry,
+                self.start_position,
+                self.goal_position,
+                obstacle_distance_threshold=self.OBSTACLE_DISTANCE_THRESHOLD,
+            )
+            self.navigation_state = "GO_TO_GOAL"
+
+        if self.has_reached_goal(current_position):
+            self.navigation_state = "GOAL_REACHED"
+            self.publish_stop()
+            return
+
+        lidar_distance = self.lidar.get_latest_distance()
+        if self.navigation_state == "GO_TO_GOAL":
+            if lidar_distance <= self.OBSTACLE_DISTANCE_THRESHOLD:
+                self.handle_obstacle(
+                    current_position,
+                    current_orientation,
+                    lidar_distance,
+                )
+            else:
+                self.navigate_toward_goal(current_position, current_orientation)
+        elif self.navigation_state == "WALL_FOLLOW":
+            self.handle_obstacle(
+                current_position,
+                current_orientation,
+                lidar_distance,
+            )
+        elif self.navigation_state == "GOAL_REACHED":
+            self.publish_stop()
+        else:
+            self.get_logger().error(
+                f"Unsupported navigation state: {self.navigation_state}"
+            )
+            self.publish_stop()
+
+    def has_reached_goal(self, current_position: tuple[float, float]) -> bool:
+        """Return whether the robot is within tolerance of its target."""
+        if self.goal_position is None:
+            return False
+
+        remaining_distance = math.hypot(
+            self.goal_position[0] - current_position[0],
+            self.goal_position[1] - current_position[1],
+        )
+        return remaining_distance <= self.GOAL_TOLERANCE
+
+    def navigate_toward_goal(
+        self,
+        current_position: tuple[float, float],
+        current_orientation: float,
+    ) -> None:
+        """Publish a bounded velocity command toward the goal."""
+        if self.goal_position is None:
+            self.publish_stop()
+            return
+
+        goal_bearing = math.atan2(
+            self.goal_position[1] - current_position[1],
+            self.goal_position[0] - current_position[0],
+        )
+        heading_error = math.atan2(
+            math.sin(goal_bearing - current_orientation),
+            math.cos(goal_bearing - current_orientation),
+        )
+
+        command = Twist()
+        command.angular.z = max(
+            -self.MAX_ANGULAR_SPEED,
+            min(self.MAX_ANGULAR_SPEED, self.HEADING_GAIN * heading_error),
+        )
+        if abs(heading_error) < math.pi / 4:
+            command.linear.x = self.MAX_LINEAR_SPEED * max(
+                0.0,
+                math.cos(heading_error),
+            )
+
+        self.command_publisher.publish(command)
+
+    def handle_obstacle(
+        self,
+        current_position: tuple[float, float],
+        current_orientation: float,
+        lidar_distance: float,
+    ) -> None:
+        """Update obstacle state and stop when safe wall-follow data is absent."""
+        del lidar_distance
+
+        if self.obstacle_avoidance is None:
+            self.publish_stop()
+            return
+
+        avoidance_state = self.obstacle_avoidance.update_state()
+        if avoidance_state is None:
+            self.publish_stop()
+            return
+
+        self.navigation_state = avoidance_state
+        if avoidance_state == "GO_TO_GOAL":
+            self.navigate_toward_goal(
+                current_position,
+                current_orientation,
+            )
+            return
+
+        # Front-only clearance cannot determine a safe wall-following direction.
+        self.publish_stop()
+
+    def publish_stop(self) -> None:
+        """Publish a zero-velocity command."""
+        self.command_publisher.publish(Twist())
+
+    def shutdown_controller(self) -> None:
+        """Stop the robot and release resources owned by this controller."""
+        self.publish_stop()
+        self.control_timer.cancel()
+        self.destroy_timer(self.control_timer)
+        self.lidar.destroy_node()
+        self.odometry.destroy_node()
+        self.destroy_node()
