@@ -56,7 +56,7 @@ def test_nearest_obstacle_ahead_is_found_in_the_path_corridor():
 
 def test_avoidance_moves_aside_passes_and_returns_to_the_path():
     grid = OccupancyGrid()
-    grid.update_from_scan(make_scan([0.7]), (0.0, 0.0), 0.0)
+    grid.update_from_scan(make_scan([0.1]), (0.0, 0.0), 0.0)
     avoidance = ObstacleAvoidance(grid, (0.0, 0.0), (4.0, 0.0))
 
     assert avoidance.update((0.0, 0.0)) == ObstacleAvoidance.MOVE_ASIDE
@@ -77,7 +77,10 @@ def test_avoidance_moves_aside_passes_and_returns_to_the_path():
 def test_avoidance_chooses_the_side_with_more_clearance():
     grid = OccupancyGrid()
     grid.update_from_scan(
-        make_scan([0.7, 0.5], angle_increment=math.pi / 2),
+        make_scan(
+            [0.1, math.hypot(0.1, 0.12)],
+            angle_increment=math.atan2(0.12, 0.1),
+        ),
         (0.0, 0.0),
         0.0,
     )
@@ -97,34 +100,35 @@ def test_avoidance_keeps_driving_when_obstacle_is_not_near():
     assert avoidance.waypoint is None
 
 
-def test_short_goal_ignores_obstacle_safely_beyond_goal():
+def test_short_goal_ignores_obstacle_beyond_trigger_distance():
     grid = OccupancyGrid()
-    grid.update_from_scan(make_scan([0.7]), (0.0, 0.0), 0.0)
+    grid.update_from_scan(make_scan([0.5]), (0.0, 0.0), 0.0)
     avoidance = ObstacleAvoidance(grid, (0.0, 0.0), (0.2, 0.0))
 
     assert avoidance.update((0.0, 0.0)) == ObstacleAvoidance.GO_TO_GOAL
     assert avoidance.waypoint is None
 
 
-def test_short_goal_is_blocked_if_obstacle_is_within_goal_clearance():
+def test_short_goal_avoids_obstacle_at_trigger_distance():
     grid = OccupancyGrid()
-    grid.update_from_scan(make_scan([0.5]), (0.0, 0.0), 0.0)
+    grid.update_from_scan(make_scan([0.1]), (0.0, 0.0), 0.0)
     avoidance = ObstacleAvoidance(grid, (0.0, 0.0), (0.2, 0.0))
 
-    assert avoidance.update((0.0, 0.0)) == ObstacleAvoidance.BLOCKED
+    assert avoidance.update((0.0, 0.0)) == ObstacleAvoidance.MOVE_ASIDE
+    assert avoidance.waypoint is not None
 
 
 def test_avoidance_stops_if_both_bypass_routes_are_blocked():
     grid = OccupancyGrid()
     grid.update_from_scan(
         make_scan(
-            [0.5, 0.7, 0.5],
-            angle_min=-math.pi / 2,
-            angle_increment=math.pi / 2,
+            [0.13, 0.1, 0.13],
+            angle_min=-1.6,
+            angle_increment=1.6,
         ),
         (0.0, 0.0),
         0.0,
     )
-    avoidance = ObstacleAvoidance(grid, (0.0, 0.0), (4.0, 0.0))
+    avoidance = ObstacleAvoidance(grid, (0.0, 0.0), (0.4, 0.0))
 
     assert avoidance.update((0.0, 0.0)) == ObstacleAvoidance.BLOCKED

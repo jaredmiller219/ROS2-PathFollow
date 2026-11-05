@@ -125,12 +125,6 @@ class RobotController(Node):
             self.odometry.get_position(),
             self.odometry.get_orientation(),
         )
-        # print(
-        #     "[debug] LiDAR scan processed: "
-        #     f"updated_occupancy_grid={updated}, "
-        #     f"has_scan={self.occupancy_grid.has_scan}, "
-        #     f"occupied_cells={len(self.occupancy_grid.occupied_cells)}"
-        # )
         if not updated:
             self.get_logger().warning("Ignored an invalid LiDAR scan.")
 

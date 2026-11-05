@@ -48,15 +48,14 @@ def test_extract_scan_data(node):
 
 
 def test_get_valid_ranges_fov_filtering(node):
-    """Verifies that values outside the 60-degree FOV are dropped."""
-    # FOV = 60° (range: -30° to +30°)
-    angles = np.radians(np.array([-45, -20, 0, 20, 45]))
-    ranges = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    """Verifies that values outside the 90-degree FOV are dropped."""
+    angles = np.radians(np.array([-50, -45, -20, 0, 20, 45, 50]))
+    ranges = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
 
     valid = node.get_valid_ranges(ranges, angles)
 
-    # Only indices 1, 2, 3 (-20°, 0°, 20°) should survive
-    np.testing.assert_array_equal(valid, np.array([2.0, 3.0, 4.0]))
+    # The FOV boundaries at -45° and +45° are included.
+    np.testing.assert_array_equal(valid, np.array([2.0, 3.0, 4.0, 5.0, 6.0]))
 
 
 def test_get_valid_ranges_error_filtering(node):
@@ -75,14 +74,14 @@ def test_calculate_final_distance(node):
     angles = np.radians(np.array([-10, 0, 10]))
     ranges = np.array([2.0, 0.8, 1.5])  # Min value is 0.8m
 
-    # 0.8m - 0.1m (bumper offset) = 0.7m
+    # 0.8m - 0.2032m (bumper offset) = 0.5968m
     distance = node.calculate_final_distance(ranges, angles)
-    assert pytest.approx(distance, abs=1e-4) == 0.7
+    assert pytest.approx(distance, abs=1e-4) == 0.5968
 
 
 def test_calculate_final_distance_no_obstacles(node):
     """Verifies infinity returned when no obstacles are within FOV."""
-    angles = np.radians(np.array([-60, 60]))  # Both outside 60° FOV
+    angles = np.radians(np.array([-60, 60]))  # Both outside 90° FOV
     ranges = np.array([1.0, 1.0])
 
     distance = node.calculate_final_distance(ranges, angles)
