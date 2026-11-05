@@ -34,7 +34,7 @@ class ObstacleAvoidance:
 
     # Minimum clearance around the robot required before continuing through a route.
     # just changed
-    ROBOT_CLEARANCE = 0.05
+    ROBOT_CLEARANCE = 0.3
 
     # Distance tolerance for deciding whether the current bypass waypoint has been reached.
     WAYPOINT_TOLERANCE = 0.10
