@@ -36,21 +36,25 @@ class OccupancyGrid:
         values = (position[0], position[1], orientation, scan.angle_min)
         if not all(math.isfinite(value) for value in values):
             print(
-                "[debug] Rejected LiDAR scan: non-finite robot pose or angle_min "
-                f"(position={position}, orientation={orientation}, "
-                f"angle_min={scan.angle_min})."
+                "\n[debug] Rejected LiDAR scan\n"
+                "\treason: non-finite robot pose or angle_min\n"
+                f"\tposition: {position}\n"
+                f"\torientation: {orientation}\n"
+                f"\tangle_min: {scan.angle_min}"
             )
             return False
         if not math.isfinite(scan.angle_increment):
             print(
-                "[debug] Rejected LiDAR scan: non-finite angle_increment "
-                f"({scan.angle_increment})."
+                "\n[debug] Rejected LiDAR scan\n"
+                "\treason: non-finite angle_increment\n"
+                f"\tangle_increment: {scan.angle_increment}"
             )
             return False
         if len(scan.ranges) > 1 and scan.angle_increment == 0.0:
             print(
-                "[debug] Rejected LiDAR scan: angle_increment is zero for "
-                f"{len(scan.ranges)} ranges."
+                "\n[debug] Rejected LiDAR scan\n"
+                "\treason: angle_increment is zero\n"
+                f"\tranges: {len(scan.ranges)}"
             )
             return False
 

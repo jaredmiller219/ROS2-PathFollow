@@ -114,7 +114,10 @@ class RobotController(Node):
     def scan_callback(self, scan: LaserScan) -> None:
         """Project scan returns into the odometry-based occupancy grid."""
         if not self.odometry.has_received_odometry:
-            print("[debug] Ignoring LiDAR scan: odometry has not been received.")
+            print(
+                "\n[debug] Ignoring LiDAR scan\n"
+                "\todometry has not been received"
+            )
             return
 
         updated = self.occupancy_grid.update_from_scan(
@@ -140,8 +143,8 @@ class RobotController(Node):
         cmd_vel_subscribers = self.count_subscribers("/cmd_vel")
         if cmd_vel_subscribers != self._last_cmd_vel_subscriber_count:
             print(
-                "[debug] /cmd_vel subscribers visible to controller: "
-                f"{cmd_vel_subscribers}"
+                "\n[debug] /cmd_vel subscribers\n"
+                f"\tvisible to controller: {cmd_vel_subscribers}"
             )
             self._last_cmd_vel_subscriber_count = cmd_vel_subscribers
 
@@ -151,10 +154,10 @@ class RobotController(Node):
 
         if not self.sensors_are_ready():
             print(
-                "[debug] Waiting for sensors: "
-                f"odometry={self.odometry.has_received_odometry}, "
-                f"lidar_scan={self.occupancy_grid.has_scan}, "
-                f"scan_publishers={self.count_publishers('/scan')}"
+                "\n[debug] Waiting for sensors\n"
+                f"\todometry: {self.odometry.has_received_odometry}\n"
+                f"\tlidar_scan: {self.occupancy_grid.has_scan}\n"
+                f"\tscan_publishers: {self.count_publishers('/scan')}"
             )
             self.publish_stop()
             return
@@ -162,9 +165,10 @@ class RobotController(Node):
         current_position = self.odometry.get_position()
         current_orientation = self.odometry.get_orientation()
         print(
-            "[debug] Control update: "
-            f"state={self.navigation_state}, position={current_position}, "
-            f"orientation={current_orientation:.3f}"
+            "\n[debug] Control update\n"
+            f"\tstate: {self.navigation_state}\n"
+            f"\tposition: {current_position}\n"
+            f"\torientation: {current_orientation:.3f}"
         )
         self._initialize_route(current_position, current_orientation)
 
@@ -180,7 +184,10 @@ class RobotController(Node):
             return
 
         self.navigation_state = avoidance.update(current_position)
-        print(f"[debug] Obstacle avoidance state: {self.navigation_state}")
+        print(
+            "\n[debug] Obstacle avoidance state\n"
+            f"\t{self.navigation_state}"
+        )
         if self.navigation_state == ObstacleAvoidance.BLOCKED:
             self.publish_stop()
             self.get_logger().error(
@@ -190,10 +197,13 @@ class RobotController(Node):
 
         target = self._current_target()
         if target is None:
-            print("[debug] No navigation target is available; stopping.")
+            print(
+                "\n[debug] No navigation target is available\n"
+                "\tstopping"
+            )
             self.publish_stop()
             return
-        print(f"[debug] Navigation target: {target}")
+        print(f"\n[debug] Navigation target\n\ttarget: {target}")
 
         if self.navigation_state != ObstacleAvoidance.GO_TO_GOAL:
             clearance = self.occupancy_grid.segment_clearance(
@@ -230,8 +240,10 @@ class RobotController(Node):
         self.start_orientation = current_orientation
         self.goal_position = goal_position
         print(
-            f"[debug] Route initialized: start={current_position}, "
-            f"goal={goal_position}, goal_distance={self.goal_distance:.3f}"
+            "\n[debug] Route initialized\n"
+            f"\tstart: {current_position}\n"
+            f"\tgoal: {goal_position}\n"
+            f"\tgoal_distance: {self.goal_distance:.3f}"
         )
         self.obstacle_avoidance = ObstacleAvoidance(
             self.occupancy_grid,
@@ -271,8 +283,9 @@ class RobotController(Node):
         )
         if distance <= target_tolerance:
             print(
-                f"[debug] Target reached within tolerance: "
-                f"distance={distance:.3f}, tolerance={target_tolerance:.3f}"
+                "\n[debug] Target reached within tolerance\n"
+                f"\tdistance: {distance:.3f}\n"
+                f"\ttolerance: {target_tolerance:.3f}"
             )
             self.publish_stop()
             return
@@ -302,10 +315,12 @@ class RobotController(Node):
             )
 
         print(
-            f"[debug] Command: target={target}, distance={distance:.3f}, "
-            f"heading_error={heading_error:.3f}, "
-            f"linear_x={command.linear.x:.3f}, "
-            f"angular_z={command.angular.z:.3f}"
+            "\n[debug] Command\n"
+            f"\ttarget: {target}\n"
+            f"\tdistance: {distance:.3f}\n"
+            f"\theading_error: {heading_error:.3f}\n"
+            f"\tlinear_x: {command.linear.x:.3f}\n"
+            f"\tangular_z: {command.angular.z:.3f}"
         )
         self.command_publisher.publish(command)
 

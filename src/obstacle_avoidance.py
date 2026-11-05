@@ -89,15 +89,17 @@ class ObstacleAvoidance:
             self._forward,
         )
         print(
-            "[debug] Obstacle candidate: "
-            f"position={obstacle}, along_path={along_path:.3f} m, "
-            f"goal_distance={self.goal_distance:.3f} m"
+            "\n[debug] Obstacle candidate\n"
+            f"\tposition: {obstacle}\n"
+            f"\talong_path: {along_path:.3f} m\n"
+            f"\tgoal_distance: {self.goal_distance:.3f} m"
         )
         if along_path > self.OBSTACLE_TRIGGER_DISTANCE:
             print(
-                "[debug] Ignoring obstacle: "
-                f"{along_path:.3f} m is beyond the "
-                f"{self.OBSTACLE_TRIGGER_DISTANCE:.3f} m trigger distance."
+                "\n[debug] Ignoring obstacle\n"
+                f"\talong_path: {along_path:.3f} m\n"
+                f"\ttrigger_distance: "
+                f"{self.OBSTACLE_TRIGGER_DISTANCE:.3f} m"
             )
             return
 
@@ -105,21 +107,21 @@ class ObstacleAvoidance:
             goal_clearance = math.dist(obstacle, self.goal_position)
             if goal_clearance >= self.ROBOT_CLEARANCE:
                 print(
-                    "[debug] Ignoring obstacle beyond the goal: "
-                    f"goal_clearance={goal_clearance:.3f} m, "
-                    f"required={self.ROBOT_CLEARANCE:.3f} m"
+                    "\n[debug] Ignoring obstacle beyond the goal\n"
+                    f"\tgoal_clearance: {goal_clearance:.3f} m\n"
+                    f"\trequired_clearance: {self.ROBOT_CLEARANCE:.3f} m"
                 )
                 return
             print(
-                "[debug] Obstacle is beyond the goal but within the required "
-                f"clearance: goal_clearance={goal_clearance:.3f} m, "
-                f"required={self.ROBOT_CLEARANCE:.3f} m"
+                "\n[debug] Obstacle is beyond the goal but within required clearance\n"
+                f"\tgoal_clearance: {goal_clearance:.3f} m\n"
+                f"\trequired_clearance: {self.ROBOT_CLEARANCE:.3f} m"
             )
 
         if not self._choose_bypass(current_position, obstacle):
             print(
-                "[debug] Both bypass routes failed the "
-                f"{self.ROBOT_CLEARANCE:.3f} m clearance requirement."
+                "\n[debug] Both bypass routes failed\n"
+                f"\trequired_clearance: {self.ROBOT_CLEARANCE:.3f} m"
             )
             self._set_state(self.BLOCKED)
             return
@@ -184,15 +186,17 @@ class ObstacleAvoidance:
             ]
             route_clearance = min(clearances)
             print(
-                f"[debug] Bypass candidate side={side:+.0f}: "
-                f"waypoints={[point for _, point in route]}, "
-                f"clearance={route_clearance:.3f} m"
+                f"\n[debug] Bypass candidate\n"
+                f"\tside: {side:+.0f}\n"
+                f"\twaypoints: {[point for _, point in route]}\n"
+                f"\tclearance: {route_clearance:.3f} m"
             )
             if route_clearance < self.ROBOT_CLEARANCE:
                 print(
-                    f"[debug] Rejected side={side:+.0f}: "
-                    f"clearance {route_clearance:.3f} m is below "
-                    f"{self.ROBOT_CLEARANCE:.3f} m."
+                    f"\n[debug] Rejected bypass candidate\n"
+                    f"\tside: {side:+.0f}\n"
+                    f"\tclearance: {route_clearance:.3f} m\n"
+                    f"\trequired_clearance: {self.ROBOT_CLEARANCE:.3f} m"
                 )
                 continue
 
@@ -221,7 +225,10 @@ class ObstacleAvoidance:
             self.RETURN_TO_PATH: "Returning to the original path toward the goal.",
             self.BLOCKED: "Route is blocked; stopping navigation.",
         }
-        print(f"ObstacleAvoidance: {messages.get(state, f'Entering state {state}.')}")
+        print(
+            "\n[debug] Obstacle avoidance\n"
+            f"\t{messages.get(state, f'Entering state {state}.')}"
+        )
 
     def _advance_waypoint(self) -> None:
         if not self._waypoints:
