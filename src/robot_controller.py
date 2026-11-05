@@ -113,12 +113,17 @@ class RobotController(Node):
     def scan_callback(self, scan: LaserScan) -> None:
         """Project scan returns into the odometry-based occupancy grid."""
         if not self.odometry.has_received_odometry:
+            print("[debug] Ignoring LiDAR scan: odometry has not been received.")
             return
 
         updated = self.occupancy_grid.update_from_scan(
             scan,
             self.odometry.get_position(),
             self.odometry.get_orientation(),
+        )
+        print(
+            f"[debug] LiDAR scan processed: updated_occupancy_grid={updated}, "
+            f"ranges={len(scan.ranges)}"
         )
         if not updated:
             self.get_logger().warning("Ignored an invalid LiDAR scan.")
@@ -134,11 +139,21 @@ class RobotController(Node):
             return
 
         if not self.sensors_are_ready():
+            print(
+                "[debug] Waiting for sensors: "
+                f"odometry={self.odometry.has_received_odometry}, "
+                f"lidar_scan={self.occupancy_grid.has_scan}"
+            )
             self.publish_stop()
             return
 
         current_position = self.odometry.get_position()
         current_orientation = self.odometry.get_orientation()
+        print(
+            "[debug] Control update: "
+            f"state={self.navigation_state}, position={current_position}, "
+            f"orientation={current_orientation:.3f}"
+        )
         self._initialize_route(current_position, current_orientation)
 
         if self.has_reached_goal(current_position):
@@ -153,6 +168,7 @@ class RobotController(Node):
             return
 
         self.navigation_state = avoidance.update(current_position)
+        print(f"[debug] Obstacle avoidance state: {self.navigation_state}")
         if self.navigation_state == ObstacleAvoidance.BLOCKED:
             self.publish_stop()
             self.get_logger().error(
@@ -162,8 +178,10 @@ class RobotController(Node):
 
         target = self._current_target()
         if target is None:
+            print("[debug] No navigation target is available; stopping.")
             self.publish_stop()
             return
+        print(f"[debug] Navigation target: {target}")
 
         if self.navigation_state != ObstacleAvoidance.GO_TO_GOAL:
             clearance = self.occupancy_grid.segment_clearance(
@@ -199,6 +217,10 @@ class RobotController(Node):
         self.start_position = current_position
         self.start_orientation = current_orientation
         self.goal_position = goal_position
+        print(
+            f"[debug] Route initialized: start={current_position}, "
+            f"goal={goal_position}, goal_distance={self.goal_distance:.3f}"
+        )
         self.obstacle_avoidance = ObstacleAvoidance(
             self.occupancy_grid,
             current_position,
@@ -236,6 +258,10 @@ class RobotController(Node):
             else self.WAYPOINT_TOLERANCE
         )
         if distance <= target_tolerance:
+            print(
+                f"[debug] Target reached within tolerance: "
+                f"distance={distance:.3f}, tolerance={target_tolerance:.3f}"
+            )
             self.publish_stop()
             return
 
@@ -263,6 +289,12 @@ class RobotController(Node):
                 self.MAX_ANGULAR_SPEED,
             )
 
+        print(
+            f"[debug] Command: target={target}, distance={distance:.3f}, "
+            f"heading_error={heading_error:.3f}, "
+            f"linear_x={command.linear.x:.3f}, "
+            f"angular_z={command.angular.z:.3f}"
+        )
         self.command_publisher.publish(command)
 
     def publish_stop(self) -> None:
