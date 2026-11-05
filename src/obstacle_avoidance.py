@@ -30,9 +30,8 @@ class ObstacleAvoidance:
     # Forward distance used to return to the goal line after passing the obstacle.
     RETURN_DISTANCE = 0.90
 
-    # Minimum clearance around the robot required before continuing through a route.
-    # just changed
-    ROBOT_CLEARANCE = 0.3
+    # Approximate half-foot robot width plus a three-inch safety margin.
+    ROBOT_CLEARANCE = 0.23
 
     # Distance tolerance for deciding whether the current bypass waypoint has been reached.
     WAYPOINT_TOLERANCE = 0.10
