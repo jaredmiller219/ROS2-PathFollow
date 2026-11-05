@@ -94,6 +94,7 @@ class RobotController(Node):
         self.navigation_state = "WAITING_FOR_SENSORS"
 
         self.command_publisher = self.create_publisher(Twist, "/cmd_vel", 10)
+        self._last_cmd_vel_subscriber_count: int | None = None
         self.scan_subscription = self.create_subscription(
             LaserScan,
             "/scan",
@@ -142,6 +143,14 @@ class RobotController(Node):
 
     def movement_callback(self) -> None:
         """Update the route and publish one movement command."""
+        cmd_vel_subscribers = self.count_subscribers("/cmd_vel")
+        if cmd_vel_subscribers != self._last_cmd_vel_subscriber_count:
+            print(
+                "[debug] /cmd_vel subscribers visible to controller: "
+                f"{cmd_vel_subscribers}"
+            )
+            self._last_cmd_vel_subscriber_count = cmd_vel_subscribers
+
         if self.navigation_state in ("GOAL_REACHED", "BLOCKED", "STOPPED"):
             self.publish_stop()
             return
