@@ -1,14 +1,4 @@
-"""
-This file defines the RobotController class, which serves as the main controller for a robot. 
-It integrates LiDAR and odometry sensor data to facilitate navigation and obstacle avoidance. 
-The RobotController class initializes and manages instances of the LidarSensor and OdometryTracker classes, 
-allowing the robot to collect sensor data, process it,
-and make navigation decisions based on the information received from these sensors.
-"""
-
-# main.py remains the program entry point: it initializes ROS 2, obtains the
-# user's goal distance, creates the controller, spins the executor, and
-# performs overall shutdown and cleanup.
+"""Coordinate sensor data, obstacle avoidance, and robot movement."""
 
 import math
 
@@ -16,101 +6,118 @@ import rclpy
 from geometry_msgs.msg import Twist
 from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.node import Node
+from sensor_msgs.msg import LaserScan
 
 from lidar import LidarSensor
-from odometry import OdometryTracker
+from occupancy_grid import OccupancyGrid
 from obstacle_avoidance import ObstacleAvoidance
+from odometry import OdometryTracker
+
 
 class RobotController(Node):
-    # lidar.py reports distance from the bumper after applying its sensor offset.
-    OBSTACLE_DISTANCE_THRESHOLD = 0.13
     GOAL_TOLERANCE = 0.03
+    WAYPOINT_TOLERANCE = 0.10
     CONTROL_PERIOD_SECONDS = 0.1
-    # TurtleBot 4 LiDAR can take a while to spin up, especially over Wi-Fi.
-    SENSOR_START_TIMEOUT_SECONDS = 30.0
-    # Conservative test speed; the TurtleBot 4 base tops out around 0.3 m/s.
-    MAX_LINEAR_SPEED = 0.2
-    # Smallest forward command that still reliably moves the base.
+    MAX_LINEAR_SPEED = 0.12
     MIN_LINEAR_SPEED = 0.03
-    APPROACH_SPEED_GAIN = 0.5
+    MAX_ANGULAR_SPEED = 0.7
+    TURN_IN_PLACE_THRESHOLD = 0.25
+    TURN_GAIN = 1.5
 
     @classmethod
     def run(cls, goal_distance: float, args=None) -> None:
-        """Initialize ROS, run the controller and sensors, then clean up."""
+        """Initialize ROS, run navigation, and clean up."""
+        rclpy.init(args=args)
+        controller = None
         executor = None
-        robot_controller = None
-        ros_initialized = False
 
         try:
-            rclpy.init(args=args)
-            ros_initialized = True
-
-            robot_controller = cls(goal_distance)
+            controller = cls(goal_distance)
             executor = SingleThreadedExecutor()
             for node in (
-                robot_controller.lidar,
-                robot_controller.odometry,
-                robot_controller,
+                controller.lidar,
+                controller.odometry,
+                controller,
             ):
                 executor.add_node(node)
 
-            robot_controller.start()
+            controller.start()
             executor.spin()
         except (KeyboardInterrupt, ExternalShutdownException):
             print("Navigation interrupted by user.")
         finally:
-            if robot_controller is not None:
-                robot_controller.shutdown_controller()
+            if controller is not None:
+                controller.shutdown_controller()
             if executor is not None:
                 executor.shutdown()
-            if ros_initialized and rclpy.ok():
+            if rclpy.ok():
                 rclpy.shutdown()
 
     def __init__(self, goal_distance: float):
-        if not isinstance(goal_distance, (int, float)) or not math.isfinite(goal_distance) or goal_distance < 0:
-            raise ValueError("goal_distance must be a finite, non-negative number")
+        if (
+            not isinstance(goal_distance, (int, float))
+            or not math.isfinite(goal_distance)
+            or goal_distance < 0.0
+        ):
+            raise ValueError("goal_distance must be finite and non-negative")
 
         super().__init__("robot_controller")
-
         self.goal_distance = float(goal_distance)
+
         self.lidar = LidarSensor()
         self.odometry = OdometryTracker()
+        self.occupancy_grid = OccupancyGrid()
 
-        # Set the goal position after the first odometry reading establishes
-        # the robot's actual starting pose.
-        self.start_position = None
-        self.start_orientation = None
-        self.goal_position = None
-
+        self.obstacle_avoidance: ObstacleAvoidance | None = None
+        self.start_position: tuple[float, float] | None = None
+        self.start_orientation: float | None = None
+        self.goal_position: tuple[float, float] | None = None
         self.navigation_state = "WAITING_FOR_SENSORS"
-        self.obstacle_avoidance = None
 
         self.command_publisher = self.create_publisher(Twist, "/cmd_vel", 10)
+        self.scan_subscription = self.create_subscription(
+            LaserScan,
+            "/scan",
+            self.scan_callback,
+            rclpy.qos.qos_profile_sensor_data,
+        )
         self.control_timer = None
 
     def start(self) -> None:
-        """Start periodic movement control after main adds nodes to its executor."""
-        if self.control_timer is not None:
+        """Start periodic movement control after executor setup."""
+        if self.control_timer is None:
+            self.control_timer = self.create_timer(
+                self.CONTROL_PERIOD_SECONDS,
+                self.movement_callback,
+            )
+
+    def scan_callback(self, scan: LaserScan) -> None:
+        """Project scan returns into the odometry-based occupancy grid."""
+        if not self.odometry.has_received_odometry:
             return
 
-        self.control_timer = self.create_timer(
-            self.CONTROL_PERIOD_SECONDS,
-            self.movement_callback,
+        updated = self.occupancy_grid.update_from_scan(
+            scan,
+            self.odometry.get_position(),
+            self.odometry.get_orientation(),
         )
+        if not updated:
+            self.get_logger().warning("Ignored an invalid LiDAR scan.")
 
     def sensors_are_ready(self) -> bool:
-        """Return whether odometry and a usable front-distance reading exist."""
+        """Wait for odometry, a scan, and the existing front-distance reading."""
         distance = self.lidar.get_latest_distance()
         return (
             self.odometry.has_received_odometry
+            and self.occupancy_grid.has_scan
             and distance is not None
             and not math.isnan(distance)
             and distance != -math.inf
         )
 
     def movement_callback(self) -> None:
-        """Drive toward the entered odometry goal while monitoring LiDAR."""
-        if self.navigation_state in ("GOAL_REACHED", "STOPPED"):
+        """Update the route and publish one movement command."""
+        if self.navigation_state in ("GOAL_REACHED", "BLOCKED", "STOPPED"):
             self.publish_stop()
             return
 
@@ -120,140 +127,148 @@ class RobotController(Node):
 
         current_position = self.odometry.get_position()
         current_orientation = self.odometry.get_orientation()
-
-        if self.goal_position is None:
-            self.start_position = current_position
-            self.start_orientation = current_orientation
-            self.goal_position = (
-                current_position[0] + self.goal_distance * math.cos(current_orientation),
-                current_position[1] + self.goal_distance * math.sin(current_orientation),
-            )
-            self.obstacle_avoidance = ObstacleAvoidance(
-                self.lidar,
-                self.odometry,
-                self.start_position,
-                self.goal_position,
-                obstacle_distance_threshold=self.OBSTACLE_DISTANCE_THRESHOLD,
-            )
-            self.navigation_state = "GO_TO_GOAL"
+        self._initialize_route(current_position, current_orientation)
 
         if self.has_reached_goal(current_position):
             self.navigation_state = "GOAL_REACHED"
             self.publish_stop()
+            self.get_logger().info("Destination reached.")
             return
 
-        lidar_distance = self.lidar.get_latest_distance()
-
-        if self.navigation_state == "GO_TO_GOAL":
-            if lidar_distance <= self.OBSTACLE_DISTANCE_THRESHOLD:
-                self.handle_obstacle()
-            else:
-                self.navigate_toward_goal(lidar_distance)
-        elif self.navigation_state == "WALL_FOLLOW":
-            self.handle_obstacle()
-        elif self.navigation_state == "GOAL_REACHED":
-            self.publish_stop()
-        else:
-            self.publish_stop()
-
-    def has_reached_goal(self, current_position: tuple[float, float]) -> bool:
-        """Return whether the robot has travelled the goal distance.
-
-        Progress is measured along the starting heading, so sideways drift
-        from driving straight cannot make the robot miss the goal and keep
-        going past it.
-        """
-        if self.start_position is None or self.start_orientation is None:
-            return False
-
-        dx = current_position[0] - self.start_position[0]
-        dy = current_position[1] - self.start_position[1]
-        progress = (
-            dx * math.cos(self.start_orientation)
-            + dy * math.sin(self.start_orientation)
-        )
-        return progress >= self.goal_distance - self.GOAL_TOLERANCE
-
-    def navigate_toward_goal(
-        self,
-        lidar_distance: float | None = None,
-    ) -> None:
-        """Drive straight forward toward the goal while front clearance is safe."""
-        if self.goal_position is None:
+        avoidance = self.obstacle_avoidance
+        if avoidance is None:
             self.publish_stop()
             return
-        if lidar_distance is None or math.isnan(lidar_distance):
-            self.publish_stop()
-            return
-        if lidar_distance == -math.inf or lidar_distance < 0.0:
+
+        self.navigation_state = avoidance.update(current_position)
+        if self.navigation_state == ObstacleAvoidance.BLOCKED:
             self.publish_stop()
             self.get_logger().error(
-                "LiDAR returned an invalid clearance; robot stopped."
+                "No clear bypass is visible in the occupancy grid; robot stopped."
             )
             return
-        # handle_obstacle() can call this after the avoidance logic reports
-        # GO_TO_GOAL, so re-check clearance here instead of assuming it.
-        if lidar_distance <= self.OBSTACLE_DISTANCE_THRESHOLD:
+
+        target = self._current_target()
+        if target is None:
             self.publish_stop()
             return
 
+        if self.navigation_state != ObstacleAvoidance.GO_TO_GOAL:
+            clearance = self.occupancy_grid.segment_clearance(
+                current_position,
+                target,
+            )
+            if clearance < ObstacleAvoidance.ROBOT_CLEARANCE:
+                self.navigation_state = ObstacleAvoidance.BLOCKED
+                self.publish_stop()
+                self.get_logger().error(
+                    "The planned bypass is blocked by a mapped obstacle."
+                )
+                return
+
+        self.navigate_to_target(
+            current_position,
+            current_orientation,
+            target,
+        )
+
+    def _initialize_route(
+        self,
+        current_position: tuple[float, float],
+        current_orientation: float,
+    ) -> None:
+        if self.goal_position is not None:
+            return
+
+        goal_position = (
+            current_position[0] + self.goal_distance * math.cos(current_orientation),
+            current_position[1] + self.goal_distance * math.sin(current_orientation),
+        )
+        self.start_position = current_position
+        self.start_orientation = current_orientation
+        self.goal_position = goal_position
+        self.obstacle_avoidance = ObstacleAvoidance(
+            self.occupancy_grid,
+            current_position,
+            goal_position,
+        )
+        self.navigation_state = ObstacleAvoidance.GO_TO_GOAL
+
+    def _current_target(self) -> tuple[float, float] | None:
+        if self.navigation_state == ObstacleAvoidance.GO_TO_GOAL:
+            return self.goal_position
+        if self.obstacle_avoidance is None:
+            return None
+        return self.obstacle_avoidance.waypoint
+
+    def has_reached_goal(self, current_position: tuple[float, float]) -> bool:
+        """Check whether the robot is physically within goal tolerance."""
+        if self.goal_position is None:
+            return False
+
+        return math.dist(current_position, self.goal_position) <= self.GOAL_TOLERANCE
+
+    def navigate_to_target(
+        self,
+        current_position: tuple[float, float],
+        current_orientation: float,
+        target: tuple[float, float],
+    ) -> None:
+        """Turn toward a waypoint, then drive toward it."""
+        dx = target[0] - current_position[0]
+        dy = target[1] - current_position[1]
+        distance = math.hypot(dx, dy)
+        target_tolerance = (
+            self.GOAL_TOLERANCE
+            if self.navigation_state == ObstacleAvoidance.GO_TO_GOAL
+            else self.WAYPOINT_TOLERANCE
+        )
+        if distance <= target_tolerance:
+            self.publish_stop()
+            return
+
+        desired_heading = math.atan2(dy, dx)
+        heading_error = math.atan2(
+            math.sin(desired_heading - current_orientation),
+            math.cos(desired_heading - current_orientation),
+        )
         command = Twist()
-        # Approach slowly as the bumper clearance nears 13 cm to reduce
-        # overshoot between LiDAR scans and control updates, but never drop
-        # below the speed the base needs to actually move.
-        speed = self.APPROACH_SPEED_GAIN * (
-            lidar_distance - self.OBSTACLE_DISTANCE_THRESHOLD
-        )
-        command.linear.x = max(
-            self.MIN_LINEAR_SPEED,
-            min(self.MAX_LINEAR_SPEED, speed),
-        )
+
+        if abs(heading_error) > self.TURN_IN_PLACE_THRESHOLD:
+            command.angular.z = self._clamp(
+                self.TURN_GAIN * heading_error,
+                -self.MAX_ANGULAR_SPEED,
+                self.MAX_ANGULAR_SPEED,
+            )
+        else:
+            command.linear.x = min(
+                self.MAX_LINEAR_SPEED,
+                max(self.MIN_LINEAR_SPEED, distance * 0.4),
+            )
+            command.angular.z = self._clamp(
+                self.TURN_GAIN * heading_error,
+                -self.MAX_ANGULAR_SPEED,
+                self.MAX_ANGULAR_SPEED,
+            )
 
         self.command_publisher.publish(command)
-
-    def handle_obstacle(self) -> None:
-        """Update obstacle state and stop when safe wall-follow data is absent."""
-
-        if self.obstacle_avoidance is None:
-            self.publish_stop()
-            return
-
-        avoidance_state = self.obstacle_avoidance.update_state()
-        if avoidance_state is None:
-            self.publish_stop()
-            return
-
-        self.navigation_state = avoidance_state
-        if avoidance_state == "GO_TO_GOAL":
-            self.navigate_toward_goal(self.lidar.get_latest_distance())
-            return
-
-        # Front-only clearance cannot determine a safe wall-following direction.
-        self.publish_stop()
 
     def publish_stop(self) -> None:
         """Publish a zero-velocity command."""
         self.command_publisher.publish(Twist())
 
     def shutdown_controller(self) -> None:
-        """Stop the robot and release resources owned by this controller."""
-        # After Ctrl+C the ROS context may already be shut down, so each step
-        # is guarded to let the rest of the cleanup still run.
-        try:
+        """Stop the robot and destroy all controller-owned nodes."""
+        if rclpy.ok():
             self.publish_stop()
-        except Exception as error:
-            print(f"Could not publish final stop command: {error}")
 
         if self.control_timer is not None:
-            try:
-                self.control_timer.cancel()
-                self.destroy_timer(self.control_timer)
-            except Exception:
-                pass
-            self.control_timer = None
+            self.control_timer.cancel()
+            self.destroy_timer(self.control_timer)
 
         for node in (self.lidar, self.odometry, self):
-            try:
-                node.destroy_node()
-            except Exception:
-                pass
+            node.destroy_node()
+
+    @staticmethod
+    def _clamp(value: float, minimum: float, maximum: float) -> float:
+        return max(minimum, min(maximum, value))

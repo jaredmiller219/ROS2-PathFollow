@@ -1,102 +1,57 @@
-## odometry.py
+"""Track the robot's pose and total distance traveled from odometry."""
 
-"""
-Tracks the robot's estimated position, orientation, and distance traveled
-using odometry data. Helps the robot determine its progress toward the
-destination and return to its original path after avoiding obstacles.
-"""
+import math
 
 import rclpy
-import math
-from rclpy.node import Node
 from nav_msgs.msg import Odometry
+from rclpy.node import Node
+
 
 class OdometryTracker(Node):
     def __init__(self):
-        """
-        Initialize node and subscribe to odometry topic.
-        """
-        super().__init__('odometry_tracker')
-
-        # State variables
+        super().__init__("odometry_tracker")
         self.position = (0.0, 0.0)
         self.orientation = 0.0
         self.distance_traveled = 0.0
         self.last_position = None
         self.has_received_odometry = False
-        
-        # Subscribe to odometry topic
+
         self.subscription = self.create_subscription(
             Odometry,
-            '/odom',
+            "/odom",
             self.odometry_callback,
-            rclpy.qos.qos_profile_sensor_data
+            rclpy.qos.qos_profile_sensor_data,
         )
 
-    def get_position(self):
-        """
-        Return current robot position.
-        """
+    def get_position(self) -> tuple[float, float]:
         return self.position
-        
-    def get_orientation(self):
-        """
-        Return current robot orientation.
-        """
+
+    def get_orientation(self) -> float:
         return self.orientation
-    
-    def get_distance_traveled(self):
-        """
-        Return total distance traveled.
-        """
+
+    def get_distance_traveled(self) -> float:
         return self.distance_traveled
-    
-    def _calculate_distance(self, pos1, pos2):
-        """
-        Calculate Euclidean distance between two positions.
-        """
-        # Euclidean distance formula: sqrt((x2 - x1)^2 + (y2 - y1)^2)
-        return math.sqrt(
-            math.pow(pos1[0] - pos2[0], 2) + 
-            math.pow(pos1[1] - pos2[1], 2)
-        )
-    
-    def _extract_orientation(self, msg: Odometry):
-        """
-        Extract orientation angle from odometry message.
-        """
-        # get the quaternion
-        pose = msg.pose.pose.orientation
 
-        # sin_yaw calculation: 2 * (w*z + x*y)
-        sin_yaw = 2.0 * ((pose.w * pose.z) + (pose.x * pose.y))
-
-        # cos_yaw calculation: 1 - 2 * (y^2 + z^2)
-        cos_yaw = 1.0 - (2.0 * (math.pow(pose.y, 2) + math.pow(pose.z, 2)))
-
-        # return the arc tangent with both sin and cos to get the yaw angle 
-        return math.atan2(sin_yaw, cos_yaw)
-
-
-    def odometry_callback(self, msg: Odometry):
-        """
-        Receive odometry data and update position tracking.
-        """
-        # Extract position from message
-        x = msg.pose.pose.position.x
-        y = msg.pose.pose.position.y
+    def odometry_callback(self, msg: Odometry) -> None:
+        """Update pose and add this odometry step to the distance total."""
+        position = (msg.pose.pose.position.x, msg.pose.pose.position.y)
         self.orientation = self._extract_orientation(msg)
         self.has_received_odometry = True
-        
-        # First-frame guard
-        if self.last_position is None:
-            self.last_position = (x, y)
-            self.position = (x, y)
-            return
-        
-        # Calculate step distance safely now that last_position is valid
-        self.distance_traveled += self._calculate_distance(self.last_position, (x, y))
-        
-        # Update states for the next iteration
-        self.position = (x, y)
-        self.last_position = (x, y)
+
+        if self.last_position is not None:
+            self.distance_traveled += math.dist(self.last_position, position)
+
+        self.position = position
+        self.last_position = position
+
+    @staticmethod
+    def _extract_orientation(msg: Odometry) -> float:
+        """Convert the odometry quaternion to a planar heading."""
+        orientation = msg.pose.pose.orientation
+        sin_yaw = 2.0 * (
+            orientation.w * orientation.z + orientation.x * orientation.y
+        )
+        cos_yaw = 1.0 - 2.0 * (
+            orientation.y**2 + orientation.z**2
+        )
+        return math.atan2(sin_yaw, cos_yaw)
