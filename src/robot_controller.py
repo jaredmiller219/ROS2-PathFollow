@@ -112,6 +112,12 @@ class RobotController(Node):
 
     def scan_callback(self, scan: LaserScan) -> None:
         """Project scan returns into the odometry-based occupancy grid."""
+        print(
+            "[debug] Received /scan: "
+            f"ranges={len(scan.ranges)}, angle_min={scan.angle_min}, "
+            f"angle_increment={scan.angle_increment}, "
+            f"range_min={scan.range_min}, range_max={scan.range_max}"
+        )
         if not self.odometry.has_received_odometry:
             print("[debug] Ignoring LiDAR scan: odometry has not been received.")
             return
@@ -122,8 +128,10 @@ class RobotController(Node):
             self.odometry.get_orientation(),
         )
         print(
-            f"[debug] LiDAR scan processed: updated_occupancy_grid={updated}, "
-            f"ranges={len(scan.ranges)}"
+            "[debug] LiDAR scan processed: "
+            f"updated_occupancy_grid={updated}, "
+            f"has_scan={self.occupancy_grid.has_scan}, "
+            f"occupied_cells={len(self.occupancy_grid.occupied_cells)}"
         )
         if not updated:
             self.get_logger().warning("Ignored an invalid LiDAR scan.")
@@ -142,7 +150,8 @@ class RobotController(Node):
             print(
                 "[debug] Waiting for sensors: "
                 f"odometry={self.odometry.has_received_odometry}, "
-                f"lidar_scan={self.occupancy_grid.has_scan}"
+                f"lidar_scan={self.occupancy_grid.has_scan}, "
+                f"scan_publishers={self.count_publishers('/scan')}"
             )
             self.publish_stop()
             return
