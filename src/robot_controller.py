@@ -8,20 +8,44 @@ from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 
-from lidar import LidarSensor
 from occupancy_grid import OccupancyGrid
 from obstacle_avoidance import ObstacleAvoidance
 from odometry import OdometryTracker
 
+"""
+Each /scan message contains distances at different angles. 
+The controller passes that scan to the occupancy grid, 
+which turns valid readings into obstacle positions
+using the robot's pose (scan_callback, update_from_scan). 
+Obstacle avoidance then finds the nearest mapped point 
+ahead within the planned path corridor (closest_obstacle_ahead) 
+and starts a bypass when it is within the 0.85 m trigger distance 
+(obstacle check).
+"""
 
 class RobotController(Node):
+    # Acceptable distance from the final goal before the robot declares success.
     GOAL_TOLERANCE = 0.03
+
+    # Distance threshold used to decide whether the current waypoint has been reached.
     WAYPOINT_TOLERANCE = 0.10
+
+    # How often the movement controller updates the robot's motion.
     CONTROL_PERIOD_SECONDS = 0.1
+
+    # Maximum forward speed allowed while navigating.
     MAX_LINEAR_SPEED = 0.12
+
+    # Minimum forward speed to keep the robot moving when not turning in place.
     MIN_LINEAR_SPEED = 0.03
+
+    # Maximum angular velocity allowed during turning adjustments.
     MAX_ANGULAR_SPEED = 0.7
+
+    # Angle threshold beyond which the robot rotates in place instead of driving forward.
     TURN_IN_PLACE_THRESHOLD = 0.25
+
+    # Gain applied when computing turn commands toward a target heading.
     TURN_GAIN = 1.5
 
     @classmethod
@@ -34,11 +58,7 @@ class RobotController(Node):
         try:
             controller = cls(goal_distance)
             executor = SingleThreadedExecutor()
-            for node in (
-                controller.lidar,
-                controller.odometry,
-                controller,
-            ):
+            for node in (controller.odometry, controller):
                 executor.add_node(node)
 
             controller.start()
@@ -64,7 +84,6 @@ class RobotController(Node):
         super().__init__("robot_controller")
         self.goal_distance = float(goal_distance)
 
-        self.lidar = LidarSensor()
         self.odometry = OdometryTracker()
         self.occupancy_grid = OccupancyGrid()
 
@@ -105,15 +124,8 @@ class RobotController(Node):
             self.get_logger().warning("Ignored an invalid LiDAR scan.")
 
     def sensors_are_ready(self) -> bool:
-        """Wait for odometry, a scan, and the existing front-distance reading."""
-        distance = self.lidar.get_latest_distance()
-        return (
-            self.odometry.has_received_odometry
-            and self.occupancy_grid.has_scan
-            and distance is not None
-            and not math.isnan(distance)
-            and distance != -math.inf
-        )
+        """Wait until odometry and a valid LiDAR scan are available."""
+        return self.odometry.has_received_odometry and self.occupancy_grid.has_scan
 
     def movement_callback(self) -> None:
         """Update the route and publish one movement command."""
@@ -266,7 +278,7 @@ class RobotController(Node):
             self.control_timer.cancel()
             self.destroy_timer(self.control_timer)
 
-        for node in (self.lidar, self.odometry, self):
+        for node in (self.odometry, self):
             node.destroy_node()
 
     @staticmethod
