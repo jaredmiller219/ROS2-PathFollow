@@ -16,7 +16,7 @@ class ObstacleAvoidance:
     BLOCKED = "BLOCKED"
 
     # Distance ahead of the robot at which an obstacle begins bypass planning.
-    OBSTACLE_TRIGGER_DISTANCE = 0.85
+    OBSTACLE_TRIGGER_DISTANCE = 0.3
 
     # Half-width of the planned forward path used when evaluating obstacle clearance.
     PATH_HALF_WIDTH = 0.40
@@ -86,9 +86,11 @@ class ObstacleAvoidance:
             (obstacle[0] - current_position[0], obstacle[1] - current_position[1]),
             self._forward,
         )
+        distance_to_obstacle = math.dist(current_position, obstacle)
         print(
             "\n[debug] Obstacle candidate\n"
             f"\tposition: {obstacle}\n"
+            f"\tdistance_to_obstacle: {distance_to_obstacle:.3f} m\n"
             f"\talong_path: {along_path:.3f} m\n"
             f"\tgoal_distance: {self.goal_distance:.3f} m"
         )
