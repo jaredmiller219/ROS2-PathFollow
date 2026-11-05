@@ -97,6 +97,23 @@ def test_avoidance_keeps_driving_when_obstacle_is_not_near():
     assert avoidance.waypoint is None
 
 
+def test_short_goal_ignores_obstacle_safely_beyond_goal():
+    grid = OccupancyGrid()
+    grid.update_from_scan(make_scan([0.7]), (0.0, 0.0), 0.0)
+    avoidance = ObstacleAvoidance(grid, (0.0, 0.0), (0.2, 0.0))
+
+    assert avoidance.update((0.0, 0.0)) == ObstacleAvoidance.GO_TO_GOAL
+    assert avoidance.waypoint is None
+
+
+def test_short_goal_is_blocked_if_obstacle_is_within_goal_clearance():
+    grid = OccupancyGrid()
+    grid.update_from_scan(make_scan([0.5]), (0.0, 0.0), 0.0)
+    avoidance = ObstacleAvoidance(grid, (0.0, 0.0), (0.2, 0.0))
+
+    assert avoidance.update((0.0, 0.0)) == ObstacleAvoidance.BLOCKED
+
+
 def test_avoidance_stops_if_both_bypass_routes_are_blocked():
     grid = OccupancyGrid()
     grid.update_from_scan(

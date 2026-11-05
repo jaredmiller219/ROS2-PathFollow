@@ -85,10 +85,39 @@ class ObstacleAvoidance:
             (obstacle[0] - current_position[0], obstacle[1] - current_position[1]),
             self._forward,
         )
+        print(
+            "[debug] Obstacle candidate: "
+            f"position={obstacle}, along_path={along_path:.3f} m, "
+            f"goal_distance={self.goal_distance:.3f} m"
+        )
         if along_path > self.OBSTACLE_TRIGGER_DISTANCE:
+            print(
+                "[debug] Ignoring obstacle: "
+                f"{along_path:.3f} m is beyond the "
+                f"{self.OBSTACLE_TRIGGER_DISTANCE:.3f} m trigger distance."
+            )
             return
 
+        if along_path > self.goal_distance:
+            goal_clearance = math.dist(obstacle, self.goal_position)
+            if goal_clearance >= self.ROBOT_CLEARANCE:
+                print(
+                    "[debug] Ignoring obstacle beyond the goal: "
+                    f"goal_clearance={goal_clearance:.3f} m, "
+                    f"required={self.ROBOT_CLEARANCE:.3f} m"
+                )
+                return
+            print(
+                "[debug] Obstacle is beyond the goal but within the required "
+                f"clearance: goal_clearance={goal_clearance:.3f} m, "
+                f"required={self.ROBOT_CLEARANCE:.3f} m"
+            )
+
         if not self._choose_bypass(current_position, obstacle):
+            print(
+                "[debug] Both bypass routes failed the "
+                f"{self.ROBOT_CLEARANCE:.3f} m clearance requirement."
+            )
             self._set_state(self.BLOCKED)
             return
 
@@ -150,10 +179,20 @@ class ObstacleAvoidance:
                 self.occupancy_grid.segment_clearance(start, end)
                 for start, end in zip(route_points, route_points[1:])
             ]
-            if min(clearances) < self.ROBOT_CLEARANCE:
+            route_clearance = min(clearances)
+            print(
+                f"[debug] Bypass candidate side={side:+.0f}: "
+                f"waypoints={[point for _, point in route]}, "
+                f"clearance={route_clearance:.3f} m"
+            )
+            if route_clearance < self.ROBOT_CLEARANCE:
+                print(
+                    f"[debug] Rejected side={side:+.0f}: "
+                    f"clearance {route_clearance:.3f} m is below "
+                    f"{self.ROBOT_CLEARANCE:.3f} m."
+                )
                 continue
 
-            route_clearance = min(clearances)
             if route_clearance > best_clearance:
                 best_route = route
                 best_clearance = route_clearance

@@ -34,10 +34,10 @@ class RobotController(Node):
     CONTROL_PERIOD_SECONDS = 0.1
 
     # Maximum forward speed allowed while navigating.
-    MAX_LINEAR_SPEED = 0.12
+    MAX_LINEAR_SPEED = 2
 
     # Minimum forward speed to keep the robot moving when not turning in place.
-    MIN_LINEAR_SPEED = 0.03
+    MIN_LINEAR_SPEED = 0.5
 
     # Maximum angular velocity allowed during turning adjustments.
     MAX_ANGULAR_SPEED = 0.7
