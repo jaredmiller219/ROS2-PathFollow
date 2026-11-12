@@ -5,6 +5,7 @@ WORKDIR /workspace
 # Install cv_bridge and OpenCV dependencies
 RUN apt-get update && apt-get install -y \
     ros-lyrical-cv-bridge \
+    ros-lyrical-irobot-create-msgs \
     python3-opencv \
     libopencv-dev \
     python3-pip \
