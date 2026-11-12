@@ -24,6 +24,10 @@ and starts a bypass when it is within the 0.85 m trigger distance
 """
 
 class RobotController(Node):
+    # Occupancy-grid cell width in meters; change this to adjust map resolution.
+    # possibly chnage to 0.3 (1 foot is 0.3 meters), or 0.2 is another option
+    OCCUPANCY_GRID_RESOLUTION = 0.05
+
     # Acceptable distance from the final goal before the robot declares success.
     GOAL_TOLERANCE = 0.03
 
@@ -85,7 +89,9 @@ class RobotController(Node):
         self.goal_distance = float(goal_distance)
 
         self.odometry = OdometryTracker()
-        self.occupancy_grid = OccupancyGrid()
+        self.occupancy_grid = OccupancyGrid(
+            resolution=self.OCCUPANCY_GRID_RESOLUTION
+        )
 
         self.obstacle_avoidance: ObstacleAvoidance | None = None
         self.start_position: tuple[float, float] | None = None

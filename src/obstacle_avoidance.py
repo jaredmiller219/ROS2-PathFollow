@@ -16,6 +16,7 @@ class ObstacleAvoidance:
     BLOCKED = "BLOCKED"
 
     # Distance ahead of the robot at which an obstacle begins bypass planning.
+    # Adjust this value: maybe set to 0.75
     OBSTACLE_TRIGGER_DISTANCE = 0.3
 
     # Half-width of the planned forward path used when evaluating obstacle clearance.

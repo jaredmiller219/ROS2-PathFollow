@@ -16,6 +16,7 @@ class OccupancyGrid:
     """Store occupied map cells in odometry (world) coordinates."""
 
     def __init__(self, resolution: float = 0.05):
+        """Create a grid with the given cell width in meters (default 0.05 m)."""
         if not math.isfinite(resolution) or resolution <= 0.0:
             raise ValueError("resolution must be finite and greater than zero")
 

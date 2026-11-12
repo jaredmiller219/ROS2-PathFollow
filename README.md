@@ -11,9 +11,13 @@ obstacles, and reach a target destination.
    
 2. After odometry is available, the controller sends each scan and the current
    robot pose to `OccupancyGrid`. The grid filters invalid/out-of-range returns
-   and projects the remaining points into odometry (world) coordinates. Because
-   this local navigation map is rebuilt from each LiDAR scan, a persistent SLAM
-   map is not needed.
+   and projects the remaining points into odometry (world) coordinates. Its
+   default resolution is 0.05 m (5 cm) per cell; returns in the same cell are
+   grouped, while obstacle clearance is measured from the stored world-coordinate
+   points. Change `RobotController.OCCUPANCY_GRID_RESOLUTION` in
+   `src/robot_controller.py` to adjust the cell width. Because this local
+   navigation map is rebuilt from each LiDAR scan, a persistent SLAM map is not
+   needed.
 
 3. `ObstacleAvoidance` checks the mapped points ahead of the robot. If an
    obstacle is within the trigger distance, it checks candidate bypass routes

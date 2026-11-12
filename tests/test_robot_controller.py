@@ -43,6 +43,14 @@ def test_goal_distance_must_be_finite_non_negative_number(distance):
         RobotController(distance)
 
 
+def test_occupancy_grid_uses_controller_resolution_setting(monkeypatch):
+    monkeypatch.setattr(RobotController, "OCCUPANCY_GRID_RESOLUTION", 0.10)
+
+    controller = make_controller()
+
+    assert controller.occupancy_grid.resolution == 0.10
+
+
 def test_start_creates_only_one_control_timer():
     controller = make_controller()
 
