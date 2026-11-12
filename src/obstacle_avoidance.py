@@ -21,9 +21,8 @@ class ObstacleAvoidance:
     # Half-width of the planned forward path used when evaluating obstacle clearance.
     PATH_HALF_WIDTH = 0.40
 
-    # Lateral offsets tried when choosing a bypass route, smallest first.
-    # The first offset that keeps ROBOT_CLEARANCE from every mapped point wins.
-    SIDE_STEP_DISTANCES = (0.3, 0.5, 0.7, 0.9, 1.1)
+    # Lateral distance the robot shifts before passing the obstacle.
+    SIDE_STEP_DISTANCE = 0.7
 
     # Forward distance used for the temporary pass waypoint.
     PASS_DISTANCE = 0.9
@@ -163,60 +162,58 @@ class ObstacleAvoidance:
         )
 
         required_clearance = self.ROBOT_CLEARANCE + self.PLANNING_CLEARANCE_MARGIN
-        side_routes = []
+        best_route = None
+        best_clearance = -1.0
         for side in (1.0, -1.0):
-            for offset in self.SIDE_STEP_DISTANCES:
-                side_vector = (side * left[0] * offset, side * left[1] * offset)
-                side_step = (
-                    current_position[0] + side_vector[0],
-                    current_position[1] + side_vector[1],
-                )
-                pass_point = (
-                    self.start_position[0] + forward[0] * pass_progress + side_vector[0],
-                    self.start_position[1] + forward[1] * pass_progress + side_vector[1],
-                )
-                return_point = (
-                    self.start_position[0] + forward[0] * return_progress,
-                    self.start_position[1] + forward[1] * return_progress,
-                )
-                route = [
-                    (self.MOVE_ASIDE, side_step),
-                    (self.PASS_OBSTACLE, pass_point),
-                    (self.RETURN_TO_PATH, return_point),
-                ]
-                route_points = [current_position, *(point for _, point in route)]
-                clearances = [
-                    self.occupancy_grid.segment_clearance(start, end)
-                    for start, end in zip(route_points, route_points[1:])
-                ]
-                route_clearance = min(clearances)
+            side_vector = (
+                side * left[0] * self.SIDE_STEP_DISTANCE,
+                side * left[1] * self.SIDE_STEP_DISTANCE,
+            )
+            side_step = (
+                current_position[0] + side_vector[0],
+                current_position[1] + side_vector[1],
+            )
+            pass_point = (
+                self.start_position[0] + forward[0] * pass_progress + side_vector[0],
+                self.start_position[1] + forward[1] * pass_progress + side_vector[1],
+            )
+            return_point = (
+                self.start_position[0] + forward[0] * return_progress,
+                self.start_position[1] + forward[1] * return_progress,
+            )
+            route = [
+                (self.MOVE_ASIDE, side_step),
+                (self.PASS_OBSTACLE, pass_point),
+                (self.RETURN_TO_PATH, return_point),
+            ]
+            route_points = [current_position, *(point for _, point in route)]
+            clearances = [
+                self.occupancy_grid.segment_clearance(start, end)
+                for start, end in zip(route_points, route_points[1:])
+            ]
+            route_clearance = min(clearances)
+            print(
+                f"\n[debug] Bypass candidate\n"
+                f"\tside: {side:+.0f}\n"
+                f"\twaypoints: {[point for _, point in route]}\n"
+                f"\tclearance: {route_clearance:.3f} m"
+            )
+            if route_clearance < required_clearance:
                 print(
-                    f"\n[debug] Bypass candidate\n"
+                    f"\n[debug] Rejected bypass candidate\n"
                     f"\tside: {side:+.0f}\n"
-                    f"\toffset: {offset:.2f}\n"
-                    f"\twaypoints: {[point for _, point in route]}\n"
-                    f"\tclearance: {route_clearance:.3f} m"
+                    f"\tclearance: {route_clearance:.3f} m\n"
+                    f"\trequired_clearance: {required_clearance:.3f} m"
                 )
-                if route_clearance < required_clearance:
-                    print(
-                        f"\n[debug] Rejected bypass candidate\n"
-                        f"\tside: {side:+.0f}\n"
-                        f"\toffset: {offset:.2f}\n"
-                        f"\tclearance: {route_clearance:.3f} m\n"
-                        f"\trequired_clearance: {required_clearance:.3f} m"
-                    )
-                    continue
+                continue
 
-                side_routes.append((offset, route_clearance, route))
-                break
+            if route_clearance > best_clearance:
+                best_route = route
+                best_clearance = route_clearance
 
-        if not side_routes:
+        if best_route is None:
             return False
 
-        _, _, best_route = min(
-            side_routes,
-            key=lambda candidate: (candidate[0], -candidate[1]),
-        )
         self._waypoints = best_route
         return True
 
