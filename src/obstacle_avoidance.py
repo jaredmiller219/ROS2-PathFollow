@@ -26,13 +26,17 @@ class ObstacleAvoidance:
     SIDE_STEP_DISTANCES = (0.3, 0.5, 0.7, 0.9, 1.1)
 
     # Forward distance used for the temporary pass waypoint.
-    PASS_DISTANCE = 0.65
+    PASS_DISTANCE = 0.9
 
     # Forward distance used to return to the goal line after passing the obstacle.
     RETURN_DISTANCE = 0.3
 
     # Approximate half-foot robot width plus a three-inch safety margin.
     ROBOT_CLEARANCE = 0.4
+
+    # Extra clearance demanded at planning time so waypoint tolerance and
+    # scan noise do not push the executed route below ROBOT_CLEARANCE.
+    PLANNING_CLEARANCE_MARGIN = 0.15
 
     # Distance tolerance for deciding whether the current bypass waypoint has been reached.
     WAYPOINT_TOLERANCE = 0.10
@@ -158,6 +162,7 @@ class ObstacleAvoidance:
             max(pass_progress, obstacle_progress + self.RETURN_DISTANCE),
         )
 
+        required_clearance = self.ROBOT_CLEARANCE + self.PLANNING_CLEARANCE_MARGIN
         side_routes = []
         for side in (1.0, -1.0):
             for offset in self.SIDE_STEP_DISTANCES:
@@ -192,13 +197,13 @@ class ObstacleAvoidance:
                     f"\twaypoints: {[point for _, point in route]}\n"
                     f"\tclearance: {route_clearance:.3f} m"
                 )
-                if route_clearance < self.ROBOT_CLEARANCE:
+                if route_clearance < required_clearance:
                     print(
                         f"\n[debug] Rejected bypass candidate\n"
                         f"\tside: {side:+.0f}\n"
                         f"\toffset: {offset:.2f}\n"
                         f"\tclearance: {route_clearance:.3f} m\n"
-                        f"\trequired_clearance: {self.ROBOT_CLEARANCE:.3f} m"
+                        f"\trequired_clearance: {required_clearance:.3f} m"
                     )
                     continue
 
