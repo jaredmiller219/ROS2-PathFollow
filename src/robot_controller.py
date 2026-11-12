@@ -66,9 +66,9 @@ class RobotController(Node):
     BUMP_ESCAPE_DISTANCE = 0.10
     BUMP_ADVANCE_DISTANCE = 0.20
     BUMP_LINEAR_SPEED = 0.15
-    BUMP_ANGULAR_SPEED = 0.6
-    BUMP_ANGLE_TOLERANCE = 0.05
-    BUMP_PHASE_TIMEOUT_SECONDS = 8.0
+    BUMP_ANGULAR_SPEED = 0.4
+    BUMP_ANGLE_TOLERANCE = 0.08
+    BUMP_PHASE_TIMEOUT_SECONDS = 5.0
 
     @classmethod
     def run(cls, goal_distance: float, args=None) -> None:
@@ -303,13 +303,12 @@ class RobotController(Node):
 
         if phase in ("TURN_RIGHT", "TURN_LEFT"):
             direction = -1.0 if phase == "TURN_RIGHT" else 1.0
-            target_delta = direction * self.BUMP_TURN_ANGLE
             yaw_delta = math.atan2(
                 math.sin(orientation - recovery["start_orientation"]),
                 math.cos(orientation - recovery["start_orientation"]),
             )
             progress = yaw_delta * direction
-            if progress >= target_delta - self.BUMP_ANGLE_TOLERANCE:
+            if progress >= self.BUMP_TURN_ANGLE - self.BUMP_ANGLE_TOLERANCE:
                 finished = True
             else:
                 command.angular.z = direction * self.BUMP_ANGULAR_SPEED
@@ -349,6 +348,12 @@ class RobotController(Node):
             f"\tlinear_x: {command.linear.x:.3f}\n"
             f"\tangular_z: {command.angular.z:.3f}"
         )
+        if phase in ("TURN_RIGHT", "TURN_LEFT"):
+            yaw_delta = math.atan2(
+                math.sin(orientation - recovery["start_orientation"]),
+                math.cos(orientation - recovery["start_orientation"]),
+            )
+            print(f"\t\tyaw_delta: {math.degrees(yaw_delta):.1f} deg")
         self.command_publisher.publish(command)
 
     def _initialize_route(
