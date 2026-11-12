@@ -17,22 +17,22 @@ class ObstacleAvoidance:
 
     # Distance ahead of the robot at which an obstacle begins bypass planning.
     # Adjust this value: maybe set to 0.75
-    OBSTACLE_TRIGGER_DISTANCE = 0.3
+    OBSTACLE_TRIGGER_DISTANCE = 0.5
 
     # Half-width of the planned forward path used when evaluating obstacle clearance.
     PATH_HALF_WIDTH = 0.40
 
     # Lateral distance the robot shifts before passing the obstacle.
-    SIDE_STEP_DISTANCE = 0.4
+    SIDE_STEP_DISTANCE = 0.2
 
     # Forward distance used for the temporary pass waypoint.
     PASS_DISTANCE = 0.65
 
     # Forward distance used to return to the goal line after passing the obstacle.
-    RETURN_DISTANCE = 0.90
+    RETURN_DISTANCE = 0.3
 
     # Approximate half-foot robot width plus a three-inch safety margin.
-    ROBOT_CLEARANCE = 0.23
+    ROBOT_CLEARANCE = 0.4
 
     # Distance tolerance for deciding whether the current bypass waypoint has been reached.
     WAYPOINT_TOLERANCE = 0.10
