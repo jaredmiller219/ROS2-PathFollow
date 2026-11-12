@@ -19,7 +19,7 @@ which turns valid readings into obstacle positions
 using the robot's pose (scan_callback, update_from_scan). 
 Obstacle avoidance then finds the nearest mapped point 
 ahead within the planned path corridor (closest_obstacle_ahead) 
-and starts a bypass when it is within the 0.85 m trigger distance 
+and starts a bypass when it is within the 1.5 m trigger distance 
 (obstacle check).
 """
 

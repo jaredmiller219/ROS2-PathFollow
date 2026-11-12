@@ -56,7 +56,7 @@ def test_nearest_obstacle_ahead_is_found_in_the_path_corridor():
 
 def test_avoidance_moves_aside_passes_and_returns_to_the_path():
     grid = OccupancyGrid()
-    grid.update_from_scan(make_scan([0.25]), (0.0, 0.0), 0.0)
+    grid.update_from_scan(make_scan([0.8]), (0.0, 0.0), 0.0)
     avoidance = ObstacleAvoidance(grid, (0.0, 0.0), (4.0, 0.0))
 
     assert avoidance.update((0.0, 0.0)) == ObstacleAvoidance.MOVE_ASIDE
@@ -76,11 +76,11 @@ def test_avoidance_moves_aside_passes_and_returns_to_the_path():
 
 def test_avoidance_chooses_the_side_with_more_clearance():
     grid = OccupancyGrid()
-    side_obstacle_distance = math.hypot(0.25, 0.35)
+    side_obstacle_distance = math.hypot(0.8, 0.35)
     grid.update_from_scan(
         make_scan(
-            [0.25, side_obstacle_distance],
-            angle_increment=math.atan2(0.35, 0.25),
+            [0.8, side_obstacle_distance],
+            angle_increment=math.atan2(0.35, 0.8),
         ),
         (0.0, 0.0),
         0.0,
@@ -94,7 +94,7 @@ def test_avoidance_chooses_the_side_with_more_clearance():
 
 def test_avoidance_keeps_driving_when_obstacle_is_not_near():
     grid = OccupancyGrid()
-    grid.update_from_scan(make_scan([1.2]), (0.0, 0.0), 0.0)
+    grid.update_from_scan(make_scan([2.0]), (0.0, 0.0), 0.0)
     avoidance = ObstacleAvoidance(grid, (0.0, 0.0), (4.0, 0.0))
 
     assert avoidance.update((0.0, 0.0)) == ObstacleAvoidance.GO_TO_GOAL
@@ -103,7 +103,7 @@ def test_avoidance_keeps_driving_when_obstacle_is_not_near():
 
 def test_short_goal_ignores_obstacle_beyond_goal_with_clearance():
     grid = OccupancyGrid()
-    grid.update_from_scan(make_scan([0.5]), (0.0, 0.0), 0.0)
+    grid.update_from_scan(make_scan([0.7]), (0.0, 0.0), 0.0)
     avoidance = ObstacleAvoidance(grid, (0.0, 0.0), (0.2, 0.0))
 
     assert avoidance.update((0.0, 0.0)) == ObstacleAvoidance.GO_TO_GOAL
