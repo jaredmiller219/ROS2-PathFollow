@@ -31,7 +31,10 @@ obstacles, and reach a target destination.
 
 Use Docker Compose from a terminal or open the project in VS Code with Dev
 Containers. See the [Docker Instructions Guide](docs/Docker_Instructions.md)
-for requirements and setup instructions.
+for requirements and setup instructions. For a visual Gazebo/TurtleBot 4
+simulation in Docker, see the
+[TurtleBot 4 Gazebo simulation](docs/Docker_Instructions.md#turtlebot-4-gazebo-simulation-ros-2-jazzy)
+section.
 
 A TurtleBot 4 and its ROS 2 network configuration are also required to test
 against a physical robot.

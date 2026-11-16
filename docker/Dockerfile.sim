@@ -1,0 +1,35 @@
+FROM ros:jazzy
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release \
+    novnc \
+    openbox \
+    python3-numpy \
+    websockify \
+    xvfb \
+    x11vnc \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://packages.osrfoundation.org/gazebo.gpg \
+        -o /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" \
+        > /etc/apt/sources.list.d/gazebo-stable.list
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gz-harmonic \
+    ros-jazzy-irobot-create-nodes \
+    ros-jazzy-turtlebot4-simulator \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY docker/sim-entrypoint.sh /usr/local/bin/sim-entrypoint
+COPY docker/jazzy-controller.sh /usr/local/bin/jazzy-controller
+RUN chmod +x /usr/local/bin/sim-entrypoint /usr/local/bin/jazzy-controller
+
+WORKDIR /workspace
+ENTRYPOINT ["sim-entrypoint"]

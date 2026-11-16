@@ -2,7 +2,7 @@
 
 import math
 
-from occupancy_grid import OccupancyGrid
+from occupancy_grid import ObstacleExtent, OccupancyGrid
 
 
 class ObstacleAvoidance:
@@ -47,9 +47,9 @@ class ObstacleAvoidance:
     # Approximate half-foot robot width plus a three-inch safety margin.
     ROBOT_CLEARANCE = 0.4
 
-    # Extra clearance demanded at planning time so waypoint tolerance and
-    # scan noise do not push the executed route below ROBOT_CLEARANCE.
-    PLANNING_CLEARANCE_MARGIN = 0.15
+    # Extra clearance demanded at planning time so scan noise does not
+    # push the executed route below ROBOT_CLEARANCE.
+    PLANNING_CLEARANCE_MARGIN = 0.05
 
     def __init__(
         self,
@@ -146,7 +146,7 @@ class ObstacleAvoidance:
     def _choose_bypass(
         self,
         current_position: tuple[float, float],
-        extent,
+        extent: ObstacleExtent,
     ) -> bool:
         forward = self._forward
         left = (-forward[1], forward[0])

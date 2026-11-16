@@ -1,7 +1,6 @@
 """Coordinate sensor data, obstacle avoidance, and robot movement."""
 
 import math
-import time
 
 import rclpy
 from geometry_msgs.msg import Twist
@@ -13,20 +12,15 @@ from occupancy_grid import OccupancyGrid
 from obstacle_avoidance import ObstacleAvoidance
 from odometry import OdometryTracker
 
-try:
-    from irobot_create_msgs.msg import HazardDetectionVector
-except ImportError:
-    HazardDetectionVector = None
-
 """
-Each /scan message contains distances at different angles. 
-The controller passes that scan to the occupancy grid, 
+Each /scan message contains distances at different angles.
+The controller passes that scan to the occupancy grid,
 which turns valid readings into obstacle positions
-using the robot's pose (scan_callback, update_from_scan). 
-Obstacle avoidance then finds the nearest mapped point 
-ahead within the planned path corridor (closest_obstacle_ahead) 
-and starts a bypass when it is within the 1.5 m trigger distance 
-(obstacle check).
+using the robot's pose (scan_callback, update_from_scan).
+Obstacle avoidance then finds the obstacle blocking the
+planned path corridor (blocking_obstacle) and, when it is
+within the 1.5 m trigger distance, plans a measured-width
+turn-and-drive bypass around it.
 """
 
 class RobotController(Node):
@@ -37,8 +31,11 @@ class RobotController(Node):
     # Acceptable distance from the final goal before the robot declares success.
     GOAL_TOLERANCE = 0.03
 
-    # Distance threshold used to decide whether the current waypoint has been reached.
-    WAYPOINT_TOLERANCE = 0.10
+    # Angle threshold for deciding a turn leg has reached its target heading.
+    LEG_ANGLE_TOLERANCE = 0.08
+
+    # Distance tolerance for deciding a drive leg has covered its distance.
+    LEG_DISTANCE_TOLERANCE = 0.03
 
     # How often the movement controller updates the robot's motion.
     CONTROL_PERIOD_SECONDS = 0.1
@@ -57,18 +54,6 @@ class RobotController(Node):
 
     # Gain applied when computing turn commands toward a target heading.
     TURN_GAIN = 1.5
-
-    # HazardDetection.type value for a bumper hit (irobot_create_msgs).
-    BUMP_HAZARD_TYPE = 1
-
-    # Bump recovery maneuver: turn right, drive out, turn back, drive forward.
-    BUMP_TURN_ANGLE = math.pi / 2
-    BUMP_ESCAPE_DISTANCE = 0.10
-    BUMP_ADVANCE_DISTANCE = 0.20
-    BUMP_LINEAR_SPEED = 0.15
-    BUMP_ANGULAR_SPEED = 0.4
-    BUMP_ANGLE_TOLERANCE = 0.08
-    BUMP_PHASE_TIMEOUT_SECONDS = 5.0
 
     @classmethod
     def run(cls, goal_distance: float, args=None) -> None:
@@ -127,15 +112,6 @@ class RobotController(Node):
             self.scan_callback,
             rclpy.qos.qos_profile_sensor_data,
         )
-        self._bumper_pressed = False
-        self._bump_recovery: dict | None = None
-        if HazardDetectionVector is not None:
-            self.hazard_subscription = self.create_subscription(
-                HazardDetectionVector,
-                "/hazard_detection",
-                self.hazard_callback,
-                rclpy.qos.qos_profile_sensor_data,
-            )
         self.control_timer = None
 
     def start(self) -> None:
@@ -163,27 +139,6 @@ class RobotController(Node):
         if not updated:
             self.get_logger().warning("Ignored an invalid LiDAR scan.")
 
-    def hazard_callback(self, msg: HazardDetectionVector) -> None:
-        """Start the bump escape maneuver on a rising bumper edge."""
-        bump_pressed = any(
-            detection.type == self.BUMP_HAZARD_TYPE
-            for detection in msg.detections
-        )
-        if (
-            bump_pressed
-            and not self._bumper_pressed
-            and self._bump_recovery is None
-            and self.navigation_state not in ("GOAL_REACHED", "BLOCKED", "STOPPED")
-        ):
-            print("\n[debug] Bumper hit; starting recovery maneuver.")
-            self.navigation_state = "BUMP_RECOVERY"
-            self._bump_recovery = self._new_recovery_phase(
-                "TURN_RIGHT",
-                self.odometry.get_orientation(),
-                self.odometry.get_position(),
-            )
-        self._bumper_pressed = bump_pressed
-
     def sensors_are_ready(self) -> bool:
         """Wait until odometry and a valid LiDAR scan are available."""
         return self.odometry.has_received_odometry and self.occupancy_grid.has_scan
@@ -210,10 +165,6 @@ class RobotController(Node):
                 f"\tscan_publishers: {self.count_publishers('/scan')}"
             )
             self.publish_stop()
-            return
-
-        if self._bump_recovery is not None:
-            self._run_bump_recovery()
             return
 
         current_position = self.odometry.get_position()
@@ -274,86 +225,6 @@ class RobotController(Node):
             current_orientation,
             target,
         )
-
-    def _new_recovery_phase(
-        self,
-        phase: str,
-        start_orientation: float,
-        start_position: tuple[float, float],
-    ) -> dict:
-        return {
-            "phase": phase,
-            "start_orientation": start_orientation,
-            "start_position": start_position,
-            "deadline": time.monotonic() + self.BUMP_PHASE_TIMEOUT_SECONDS,
-        }
-
-    def _run_bump_recovery(self) -> None:
-        """Execute the bump escape maneuver one phase at a time."""
-        recovery = self._bump_recovery
-        if recovery is None:
-            return
-
-        phase = recovery["phase"]
-        orientation = self.odometry.get_orientation()
-        position = self.odometry.get_position()
-        command = Twist()
-        finished = False
-
-        if phase in ("TURN_RIGHT", "TURN_LEFT"):
-            direction = -1.0 if phase == "TURN_RIGHT" else 1.0
-            yaw_delta = math.atan2(
-                math.sin(orientation - recovery["start_orientation"]),
-                math.cos(orientation - recovery["start_orientation"]),
-            )
-            progress = yaw_delta * direction
-            if progress >= self.BUMP_TURN_ANGLE - self.BUMP_ANGLE_TOLERANCE:
-                finished = True
-            else:
-                command.angular.z = direction * self.BUMP_ANGULAR_SPEED
-        else:
-            target_distance = (
-                self.BUMP_ESCAPE_DISTANCE
-                if phase == "DRIVE_ESCAPE"
-                else self.BUMP_ADVANCE_DISTANCE
-            )
-            if math.dist(position, recovery["start_position"]) >= target_distance:
-                finished = True
-            else:
-                command.linear.x = self.BUMP_LINEAR_SPEED
-
-        if finished or time.monotonic() > recovery["deadline"]:
-            next_phase = {
-                "TURN_RIGHT": "DRIVE_ESCAPE",
-                "DRIVE_ESCAPE": "TURN_LEFT",
-                "TURN_LEFT": "DRIVE_ADVANCE",
-            }.get(phase)
-            if next_phase is None:
-                print("\n[debug] Bump recovery maneuver complete.")
-                self._bump_recovery = None
-                self.publish_stop()
-                return
-            print(f"\n[debug] Bump recovery: {phase} done, entering {next_phase}.")
-            self._bump_recovery = self._new_recovery_phase(
-                next_phase,
-                self.odometry.get_orientation(),
-                self.odometry.get_position(),
-            )
-            command = Twist()
-
-        print(
-            "\n[debug] Bump recovery\n"
-            f"\tphase: {phase}\n"
-            f"\tlinear_x: {command.linear.x:.3f}\n"
-            f"\tangular_z: {command.angular.z:.3f}"
-        )
-        if phase in ("TURN_RIGHT", "TURN_LEFT"):
-            yaw_delta = math.atan2(
-                math.sin(orientation - recovery["start_orientation"]),
-                math.cos(orientation - recovery["start_orientation"]),
-            )
-            print(f"\t\tyaw_delta: {math.degrees(yaw_delta):.1f} deg")
-        self.command_publisher.publish(command)
 
     def _initialize_route(
         self,
@@ -425,7 +296,7 @@ class RobotController(Node):
             )
         else:
             leg_forward = (math.cos(heading), math.sin(heading))
-            start = self._leg_start_position
+            start = self._leg_start_position or current_position
             progress = (
                 (current_position[0] - start[0]) * leg_forward[0]
                 + (current_position[1] - start[1]) * leg_forward[1]
@@ -474,7 +345,7 @@ class RobotController(Node):
         current_orientation: float,
         target: tuple[float, float],
     ) -> None:
-        """Turn toward a waypoint, then drive toward it."""
+        """Turn toward the target, then drive toward it."""
         dx = target[0] - current_position[0]
         dy = target[1] - current_position[1]
         distance = math.hypot(dx, dy)

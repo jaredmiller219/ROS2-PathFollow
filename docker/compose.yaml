@@ -8,8 +8,54 @@ services:
       - ..:/workspace
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
     environment:
-      - DISPLAY=${DISPLAY}
+      - DISPLAY=${DISPLAY:-}
       - QT_X11_NO_MITSHM=1
     stdin_open: true
     tty: true
     network_mode: host
+
+  turtlebot4-sim:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.sim
+    image: ros2-pathfollow-jazzy:latest
+    entrypoint:
+      - /bin/bash
+      - /workspace/docker/sim-entrypoint.sh
+    profiles:
+      - sim
+    working_dir: /workspace
+    volumes:
+      - ..:/workspace
+      - ../sim/worlds/path_following.sdf:/opt/ros/jazzy/share/turtlebot4_gz_bringup/worlds/path_following.sdf:ro
+    environment:
+      - WORLD=${WORLD:-path_following}
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - VNC_RESOLUTION=${VNC_RESOLUTION:-1600x900x24}
+      - LIBGL_ALWAYS_SOFTWARE=1
+    ports:
+      - "${NOVNC_HOST_PORT:-6080}:6080"
+    stdin_open: true
+    tty: true
+    shm_size: "1gb"
+
+  ros2-pathfollow-jazzy:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.sim
+    image: ros2-pathfollow-jazzy:latest
+    profiles:
+      - sim
+    working_dir: /workspace
+    volumes:
+      - ..:/workspace
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+    entrypoint:
+      - /bin/bash
+      - /workspace/docker/jazzy-controller.sh
+    stdin_open: true
+    tty: true
+    network_mode: service:turtlebot4-sim
+    depends_on:
+      - turtlebot4-sim
