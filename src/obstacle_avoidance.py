@@ -15,13 +15,10 @@ class ObstacleAvoidance:
     RETURN_TO_PATH = "RETURN_TO_PATH"
     BLOCKED = "BLOCKED"
 
-    # Distance from the LiDAR to the front of the robot, in meters (~8 in).
-    LIDAR_TO_ROBOT_FRONT = 0.2032
-
-    # Distance ahead of the robot at which an obstacle begins bypass planning:
-    # LiDAR-to-front distance plus 14 in of maneuvering room and a 4 in
-    # safety margin (~0.660 m total, ~26 in from the LiDAR).
-    OBSTACLE_TRIGGER_DISTANCE = LIDAR_TO_ROBOT_FRONT + 18 * 0.0254
+    # Distance ahead of the robot at which an obstacle begins bypass planning.
+    # Must stay comfortably above the 0.55 m route-clearance requirement so a
+    # bypass route can actually be planned at trigger time.
+    OBSTACLE_TRIGGER_DISTANCE = 0.8
 
     # Half-angle of the forward view cone used to detect obstacles:
     # a 45-degree total field of view centered on the goal heading.

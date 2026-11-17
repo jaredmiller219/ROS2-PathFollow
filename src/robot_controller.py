@@ -26,7 +26,7 @@ using the robot's pose (scan_callback, update_from_scan).
 Obstacle avoidance then finds the nearest mapped point 
 inside the forward view cone (closest_obstacle_ahead) 
 and starts a bypass when it is within the trigger distance
-(OBSTACLE_TRIGGER_DISTANCE: LiDAR-to-front + 14 in + 4 in margin).
+(obstacle check, OBSTACLE_TRIGGER_DISTANCE).
 """
 
 class RobotController(Node):
