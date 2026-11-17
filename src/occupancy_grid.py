@@ -30,11 +30,12 @@ class OccupancyGrid:
         position: tuple[float, float],
         orientation: float,
     ) -> bool:
-        """Merge valid obstacle returns from one scan into the grid.
+        """Replace the grid with valid obstacle returns from one scan.
 
-        Cells are never cleared: the environment is assumed static, so
-        obstacles stay mapped even when they leave the current scan view.
+        Only the current scan is kept: routes are checked against what the
+        LiDAR sees right now, with no memory of past scans.
         """
+        self.occupied_cells.clear()
         self.has_scan = False
 
         values = (position[0], position[1], orientation, scan.angle_min)
