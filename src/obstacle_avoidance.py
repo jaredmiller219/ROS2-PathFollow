@@ -17,6 +17,7 @@ class ObstacleAvoidance:
 
     # Run States
     GO_TO_GOAL = "GO_TO_GOAL"
+    OBJECT_DETECTED = "OBJECT_DETECTED"
     BLOCKED = "BLOCKED"
 
     # Maneuver leg phases executed one at a time by the controller.
@@ -31,6 +32,9 @@ class ObstacleAvoidance:
     # Distance ahead of the robot at which an obstacle begins bypass planning.
     # Set large so obstacles are detected early while the robot keeps driving.
     OBSTACLE_TRIGGER_DISTANCE = 5.0
+
+    # Distance at which the robot announces object detection (2 feet).
+    OBJECT_DETECTION_DISTANCE = 0.61
 
     # Distance at which the robot stops driving forward and starts the maneuver.
     # This is when it gets close to the obstacle.
@@ -120,42 +124,29 @@ class ObstacleAvoidance:
         current_orientation: float,
         scan: LaserScanData,
     ) -> None:
-        extent = self._find_blocking_obstacle(
-            current_position,
-            current_orientation,
-            scan,
-        )
-        if extent is None:
-            self._detected_extent = None
+        # If we already have a detected obstacle, just check distance to it
+        if self._detected_extent is not None:
+            distance_to_obstacle = math.dist(current_position, self._obstacle_world_position)
+
+            # Set OBJECT_DETECTED state when within 2 feet
+            if distance_to_obstacle <= self.OBJECT_DETECTION_DISTANCE:
+                self._set_state(self.OBJECT_DETECTED)
+
+            # Only start the maneuver when we're close to the obstacle
+            if distance_to_obstacle > self.MANEUVER_START_DISTANCE:
+                return
+
+            # Plan the bypass
+            self._plan_bypass(current_position, self._detected_extent, scan, current_orientation)
             return
 
-        # Store the detected obstacle for when we get closer
-        if self._detected_extent is None:
-            forward = self._forward
-            obstacle_point = (
-                current_position[0] + forward[0] * extent.along,
-                current_position[1] + forward[1] * extent.along,
-            )
-            print(
-                "\n[debug] Obstacle detected ahead\n"
-                f"\tapprox_position: {obstacle_point}\n"
-                f"\tdistance_ahead: {extent.along:.3f} m\n"
-                f"\twidth: {extent.lat_max - extent.lat_min:.3f} m\n"
-                f"\tlat_min: {extent.lat_min:.3f} m\n"
-                f"\tlat_max: {extent.lat_max:.3f} m\n"
-                f"\tgoal_distance: {self.goal_distance:.3f} m"
-            )
-            self._detected_extent = extent
-            self._obstacle_world_position = obstacle_point
-
-        # Calculate distance to the fixed obstacle world position
-        distance_to_obstacle = math.dist(current_position, self._obstacle_world_position)
-
-        # Only start the maneuver when we're close to the obstacle
-        if distance_to_obstacle > self.MANEUVER_START_DISTANCE:
-            return
-
-        extent = self._detected_extent
+    def _plan_bypass(
+        self,
+        current_position: tuple[float, float],
+        extent: "ObstacleExtent",
+        scan: LaserScanData,
+        current_orientation: float,
+    ) -> None:
         forward = self._forward
         obstacle_point = self._obstacle_world_position
         # Update extent.along to be the distance from current position to obstacle
@@ -197,6 +188,48 @@ class ObstacleAvoidance:
             return
 
         self._advance_leg()
+
+        # Otherwise, look for a new obstacle
+        extent = self._find_blocking_obstacle(
+            current_position,
+            current_orientation,
+            scan,
+        )
+        if extent is None:
+            self._detected_extent = None
+            return
+
+        # Store the detected obstacle for when we get closer
+        forward = self._forward
+        obstacle_point = (
+            current_position[0] + forward[0] * extent.along,
+            current_position[1] + forward[1] * extent.along,
+        )
+        print(
+            "\n[debug] Obstacle detected ahead\n"
+            f"\tapprox_position: {obstacle_point}\n"
+            f"\tdistance_ahead: {extent.along:.3f} m\n"
+            f"\twidth: {extent.lat_max - extent.lat_min:.3f} m\n"
+            f"\tlat_min: {extent.lat_min:.3f} m\n"
+            f"\tlat_max: {extent.lat_max:.3f} m\n"
+            f"\tgoal_distance: {self.goal_distance:.3f} m"
+        )
+        self._detected_extent = extent
+        self._obstacle_world_position = obstacle_point
+
+        # Check distance immediately
+        distance_to_obstacle = math.dist(current_position, self._obstacle_world_position)
+
+        # Set OBJECT_DETECTED state when within 2 feet
+        if distance_to_obstacle <= self.OBJECT_DETECTION_DISTANCE:
+            self._set_state(self.OBJECT_DETECTED)
+
+        # If far, just return without planning
+        if distance_to_obstacle > self.MANEUVER_START_DISTANCE:
+            return
+
+        # Otherwise, plan the bypass
+        self._plan_bypass(current_position, extent, scan, current_orientation)
 
     def _find_blocking_obstacle(
         self,
@@ -408,6 +441,7 @@ class ObstacleAvoidance:
 
         messages = {
             self.GO_TO_GOAL: "Driving toward the goal.",
+            self.OBJECT_DETECTED: "Object detected ahead.",
             self.DRIVE_UP: "Driving up to the obstacle.",
             self.TURN_ASIDE: "Obstacle detected; turning toward the clearer side.",
             self.DRIVE_ASIDE: "Moving sideways to clear the obstacle edge.",

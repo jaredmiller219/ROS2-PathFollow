@@ -205,7 +205,16 @@ def test_movement_starts_maneuver_when_close_to_obstacle():
     controller._initialize_route((0.0, 0.0), 0.0)
     # First detect the obstacle from origin
     controller.movement_callback()
-    # Then move closer
+    # Then move to 2 feet away
+    controller.odometry.position = (0.19, 0.0)
+
+    controller.movement_callback()
+
+    command = controller.command_publisher.messages[-1]
+    # Obstacle was detected at 0.8m from origin, robot now at 0.19m = 0.61m away
+    assert controller.navigation_state == ObstacleAvoidance.OBJECT_DETECTED
+
+    # Then move closer to start maneuver
     controller.odometry.position = (0.3, 0.0)
 
     controller.movement_callback()

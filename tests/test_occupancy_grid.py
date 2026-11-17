@@ -33,6 +33,9 @@ def test_avoidance_turns_drives_and_returns_around_obstacle():
     assert avoidance.update((0.0, 0.0), 0.0, scan) == ObstacleAvoidance.GO_TO_GOAL
     assert avoidance.current_leg is None
 
+    # When 2 feet away (0.61m), state changes to OBJECT_DETECTED
+    assert avoidance.update((0.19, 0.0), 0.0, scan) == ObstacleAvoidance.OBJECT_DETECTED
+
     # When close to obstacle (0.5m away), start the maneuver
     assert avoidance.update((0.3, 0.0), 0.0, scan) == ObstacleAvoidance.DRIVE_UP
     leg = avoidance.current_leg
