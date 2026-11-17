@@ -54,7 +54,7 @@ class ObstacleAvoidance:
     WIDTH_MARGIN = 0.6
 
     # Approximate half-foot robot width plus a three-inch safety margin.
-    ROBOT_CLEARANCE = 0.4
+    ROBOT_CLEARANCE = 0.3
 
     # Extra clearance demanded at planning time so scan noise does not
     # push the executed route below ROBOT_CLEARANCE.
