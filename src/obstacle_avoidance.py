@@ -15,11 +15,22 @@ class ObstacleAvoidance:
     RETURN_TO_PATH = "RETURN_TO_PATH"
     BLOCKED = "BLOCKED"
 
-    # Distance ahead of the robot at which an obstacle begins bypass planning.
-    OBSTACLE_TRIGGER_DISTANCE = 1.5
+    # Distance from the LiDAR to the front of the robot, in meters (~8 in).
+    LIDAR_TO_ROBOT_FRONT = 0.2032
 
-    # Half-width of the planned forward path used when evaluating obstacle clearance.
-    PATH_HALF_WIDTH = 0.40
+    # Distance ahead of the robot at which an obstacle begins bypass planning:
+    # LiDAR-to-front distance plus 14 in of maneuvering room and a 4 in
+    # safety margin (~0.660 m total, ~26 in from the LiDAR).
+    OBSTACLE_TRIGGER_DISTANCE = LIDAR_TO_ROBOT_FRONT + 18 * 0.0254
+
+    # Half-angle of the forward view cone used to detect obstacles:
+    # a 45-degree total field of view centered on the goal heading.
+    FRONT_VIEW_HALF_ANGLE = math.radians(22.5)
+
+    # Half-width of the corridor around the path to the goal. Only obstacles
+    # this close to the path line count as blocking it; furniture beside the
+    # path is ignored. Roughly the robot's half-width plus a small margin.
+    PATH_CORRIDOR_HALF_WIDTH = 0.20
 
     # Lateral distance the robot shifts before passing the obstacle.
     SIDE_STEP_DISTANCE = 0.7
@@ -80,7 +91,8 @@ class ObstacleAvoidance:
         obstacle = self.occupancy_grid.closest_obstacle_ahead(
             current_position,
             self.goal_heading,
-            self.PATH_HALF_WIDTH,
+            self.FRONT_VIEW_HALF_ANGLE,
+            self.PATH_CORRIDOR_HALF_WIDTH,
         )
         if obstacle is None:
             return

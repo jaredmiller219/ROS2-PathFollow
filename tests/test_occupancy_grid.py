@@ -41,7 +41,7 @@ def test_invalid_ranges_are_ignored():
     )
 
 
-def test_nearest_obstacle_ahead_is_found_in_the_path_corridor():
+def test_nearest_obstacle_ahead_is_found_in_the_view_cone():
     grid = OccupancyGrid()
     grid.update_from_scan(
         make_scan([1.2, 0.7, 0.9], angle_min=-0.2, angle_increment=0.2),
@@ -49,14 +49,34 @@ def test_nearest_obstacle_ahead_is_found_in_the_path_corridor():
         0.0,
     )
 
-    obstacle = grid.closest_obstacle_ahead((0.0, 0.0), 0.0, 0.15)
+    obstacle = grid.closest_obstacle_ahead(
+        (0.0, 0.0), 0.0, math.radians(10), 0.2
+    )
 
     assert obstacle == pytest.approx((0.7, 0.0))
 
 
+def test_obstacle_in_view_but_off_the_path_is_ignored():
+    grid = OccupancyGrid()
+    grid.update_from_scan(
+        make_scan(
+            [math.hypot(1.0, 0.3)],
+            angle_min=math.atan2(0.3, 1.0),
+        ),
+        (0.0, 0.0),
+        0.0,
+    )
+
+    obstacle = grid.closest_obstacle_ahead(
+        (0.0, 0.0), 0.0, math.radians(30), 0.2
+    )
+
+    assert obstacle is None
+
+
 def test_avoidance_moves_aside_passes_and_returns_to_the_path():
     grid = OccupancyGrid()
-    grid.update_from_scan(make_scan([0.8]), (0.0, 0.0), 0.0)
+    grid.update_from_scan(make_scan([0.6]), (0.0, 0.0), 0.0)
     avoidance = ObstacleAvoidance(grid, (0.0, 0.0), (4.0, 0.0))
 
     assert avoidance.update((0.0, 0.0)) == ObstacleAvoidance.MOVE_ASIDE
@@ -76,11 +96,11 @@ def test_avoidance_moves_aside_passes_and_returns_to_the_path():
 
 def test_avoidance_chooses_the_side_with_more_clearance():
     grid = OccupancyGrid()
-    side_obstacle_distance = math.hypot(0.8, 0.35)
+    side_obstacle_distance = math.hypot(0.6, 0.25)
     grid.update_from_scan(
         make_scan(
-            [0.8, side_obstacle_distance],
-            angle_increment=math.atan2(0.35, 0.8),
+            [0.6, side_obstacle_distance],
+            angle_increment=math.atan2(0.25, 0.6),
         ),
         (0.0, 0.0),
         0.0,

@@ -24,9 +24,9 @@ The controller passes that scan to the occupancy grid,
 which turns valid readings into obstacle positions
 using the robot's pose (scan_callback, update_from_scan). 
 Obstacle avoidance then finds the nearest mapped point 
-ahead within the planned path corridor (closest_obstacle_ahead) 
-and starts a bypass when it is within the 1.5 m trigger distance 
-(obstacle check).
+inside the forward view cone (closest_obstacle_ahead) 
+and starts a bypass when it is within the trigger distance
+(OBSTACLE_TRIGGER_DISTANCE: LiDAR-to-front + 14 in + 4 in margin).
 """
 
 class RobotController(Node):

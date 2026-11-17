@@ -30,8 +30,11 @@ class OccupancyGrid:
         position: tuple[float, float],
         orientation: float,
     ) -> bool:
-        """Replace the grid with valid obstacle returns from one scan."""
-        self.occupied_cells.clear()
+        """Merge valid obstacle returns from one scan into the grid.
+
+        Cells are never cleared: the environment is assumed static, so
+        obstacles stay mapped even when they leave the current scan view.
+        """
         self.has_scan = False
 
         values = (position[0], position[1], orientation, scan.angle_min)
@@ -80,25 +83,35 @@ class OccupancyGrid:
         self,
         position: tuple[float, float],
         heading: float,
+        view_half_angle: float,
         corridor_half_width: float,
     ) -> tuple[float, float] | None:
-        """Return the nearest mapped point in a forward-facing corridor."""
+        """Return the nearest mapped point inside the forward view cone
+        and within corridor_half_width of the path line."""
         forward = (math.cos(heading), math.sin(heading))
         nearest_point = None
         nearest_distance = math.inf
 
         for point in self.occupied_cells.values():
             relative = (point[0] - position[0], point[1] - position[1])
-            distance_ahead = self._dot(relative, forward)
+            distance = math.hypot(*relative)
+            if distance == 0.0 or distance >= nearest_distance:
+                continue
+
+            bearing = math.atan2(relative[1], relative[0])
+            angle_offset = math.atan2(
+                math.sin(bearing - heading),
+                math.cos(bearing - heading),
+            )
             distance_to_side = abs(
                 relative[0] * -forward[1] + relative[1] * forward[0]
             )
             if (
-                0.0 < distance_ahead < nearest_distance
+                abs(angle_offset) <= view_half_angle
                 and distance_to_side <= corridor_half_width
             ):
                 nearest_point = point
-                nearest_distance = distance_ahead
+                nearest_distance = distance
 
         return nearest_point
 
