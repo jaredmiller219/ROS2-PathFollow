@@ -29,7 +29,12 @@ def test_avoidance_turns_drives_and_returns_around_obstacle():
     scan = make_scan([0.8])
     avoidance = ObstacleAvoidance((0.0, 0.0), (4.0, 0.0))
 
-    assert avoidance.update((0.0, 0.0), 0.0, scan) == ObstacleAvoidance.DRIVE_UP
+    # Obstacle detected far away - keep driving forward
+    assert avoidance.update((0.0, 0.0), 0.0, scan) == ObstacleAvoidance.GO_TO_GOAL
+    assert avoidance.current_leg is None
+
+    # When close to obstacle (0.5m away), start the maneuver
+    assert avoidance.update((0.3, 0.0), 0.0, scan) == ObstacleAvoidance.DRIVE_UP
     leg = avoidance.current_leg
     assert leg is not None
     assert leg[0] == ObstacleAvoidance.DRIVE_UP
@@ -69,8 +74,7 @@ def test_short_goal_stops_when_obstacle_is_too_close_for_bypass():
     scan = make_scan([0.1])
     avoidance = ObstacleAvoidance((0.0, 0.0), (0.2, 0.0))
 
-    # With narrow corridor and clearance checks excluding nearby points,
-    # a close obstacle now triggers a bypass rather than blocking.
+    # Obstacle detected at 0.1m, within maneuver start distance
     assert avoidance.update((0.0, 0.0), 0.0, scan) == ObstacleAvoidance.DRIVE_UP
 
 
@@ -82,6 +86,5 @@ def test_avoidance_stops_if_both_bypass_routes_are_blocked():
     )
     avoidance = ObstacleAvoidance((0.0, 0.0), (0.4, 0.0))
 
-    # With narrow corridor and clearance checks excluding nearby points,
-    # this scenario now allows a bypass rather than blocking.
+    # Obstacle at 0.1m is within maneuver start distance
     assert avoidance.update((0.0, 0.0), 0.0, scan) == ObstacleAvoidance.DRIVE_UP

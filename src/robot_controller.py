@@ -29,7 +29,7 @@ measured turn-drive-return maneuver around them.
 class RobotController(Node):
     # Occupancy-grid cell width in meters; change this to adjust map resolution.
     # possibly chnage to 0.3 (1 foot is 0.3 meters), or 0.2 is another option
-    OCCUPANCY_GRID_RESOLUTION = 0.05
+    OCCUPANCY_GRID_RESOLUTION = 0.1
 
     # Acceptable distance from the final goal before the robot declares success.
     GOAL_TOLERANCE = 0.03

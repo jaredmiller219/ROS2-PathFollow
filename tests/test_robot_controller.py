@@ -173,7 +173,7 @@ def test_publish_stop_publishes_zero_twist():
     assert command.angular.z == 0.0
 
 
-def test_movement_starts_drive_up_when_obstacle_blocks_path():
+def test_movement_keeps_driving_when_obstacle_detected_far_away():
     controller = make_controller(goal_distance=4.0)
     controller._latest_scan = SimpleNamespace(
         ranges=[0.8],
@@ -186,6 +186,32 @@ def test_movement_starts_drive_up_when_obstacle_blocks_path():
     controller.movement_callback()
 
     command = controller.command_publisher.messages[-1]
+    # Obstacle at 0.8m is detected but robot keeps driving forward
+    assert controller.navigation_state == ObstacleAvoidance.GO_TO_GOAL
+    assert command.linear.x > 0.0
+    assert command.angular.z == pytest.approx(0.0)
+
+
+def test_movement_starts_maneuver_when_close_to_obstacle():
+    controller = make_controller(goal_distance=4.0)
+    controller._latest_scan = SimpleNamespace(
+        ranges=[0.8],
+        angle_min=0.0,
+        angle_increment=0.0,
+        range_min=0.1,
+        range_max=10.0,
+    )
+    controller.odometry = FakeOdometry()
+    controller._initialize_route((0.0, 0.0), 0.0)
+    # First detect the obstacle from origin
+    controller.movement_callback()
+    # Then move closer
+    controller.odometry.position = (0.3, 0.0)
+
+    controller.movement_callback()
+
+    command = controller.command_publisher.messages[-1]
+    # Obstacle was detected at 0.8m from origin, robot now at 0.3m = 0.5m away
     assert controller.navigation_state == ObstacleAvoidance.DRIVE_UP
     assert command.linear.x > 0.0
     assert command.angular.z == pytest.approx(0.0)
@@ -213,6 +239,30 @@ def test_run_leg_turns_in_place_until_target_heading():
     assert controller.navigation_state == ObstacleAvoidance.DRIVE_ASIDE
     assert command.linear.x == 0.0
     assert command.angular.z == 0.0
+
+
+def test_run_leg_drives_forward_in_drive_up_phase():
+    controller = make_controller()
+    controller.navigation_state = ObstacleAvoidance.DRIVE_UP
+    avoidance = SimpleNamespace(
+        leg_index=0,
+        state=ObstacleAvoidance.DRIVE_UP,
+    )
+
+    def finish_leg():
+        avoidance.state = ObstacleAvoidance.TURN_ASIDE
+
+    avoidance.finish_leg = finish_leg
+    controller._run_leg(
+        (0.0, 0.0),
+        0.0,
+        (ObstacleAvoidance.DRIVE_UP, 0.0, 0.2),
+        avoidance,
+    )
+
+    command = controller.command_publisher.messages[-1]
+    assert command.linear.x > 0.0
+    assert command.angular.z == pytest.approx(0.0)
 
 
 def test_run_leg_drives_until_covering_planned_distance():
