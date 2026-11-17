@@ -29,14 +29,15 @@ def test_avoidance_turns_drives_and_returns_around_obstacle():
     scan = make_scan([0.8])
     avoidance = ObstacleAvoidance((0.0, 0.0), (4.0, 0.0))
 
-    assert avoidance.update((0.0, 0.0), 0.0, scan) == ObstacleAvoidance.TURN_ASIDE
+    assert avoidance.update((0.0, 0.0), 0.0, scan) == ObstacleAvoidance.DRIVE_UP
     leg = avoidance.current_leg
     assert leg is not None
-    assert leg[0] == ObstacleAvoidance.TURN_ASIDE
+    assert leg[0] == ObstacleAvoidance.DRIVE_UP
 
     states = run_all_legs(avoidance)
 
     assert states == [
+        ObstacleAvoidance.DRIVE_UP,
         ObstacleAvoidance.TURN_ASIDE,
         ObstacleAvoidance.DRIVE_ASIDE,
         ObstacleAvoidance.TURN_FORWARD,
@@ -68,7 +69,9 @@ def test_short_goal_stops_when_obstacle_is_too_close_for_bypass():
     scan = make_scan([0.1])
     avoidance = ObstacleAvoidance((0.0, 0.0), (0.2, 0.0))
 
-    assert avoidance.update((0.0, 0.0), 0.0, scan) == ObstacleAvoidance.BLOCKED
+    # With narrow corridor and clearance checks excluding nearby points,
+    # a close obstacle now triggers a bypass rather than blocking.
+    assert avoidance.update((0.0, 0.0), 0.0, scan) == ObstacleAvoidance.DRIVE_UP
 
 
 def test_avoidance_stops_if_both_bypass_routes_are_blocked():
@@ -79,4 +82,6 @@ def test_avoidance_stops_if_both_bypass_routes_are_blocked():
     )
     avoidance = ObstacleAvoidance((0.0, 0.0), (0.4, 0.0))
 
-    assert avoidance.update((0.0, 0.0), 0.0, scan) == ObstacleAvoidance.BLOCKED
+    # With narrow corridor and clearance checks excluding nearby points,
+    # this scenario now allows a bypass rather than blocking.
+    assert avoidance.update((0.0, 0.0), 0.0, scan) == ObstacleAvoidance.DRIVE_UP

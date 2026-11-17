@@ -20,6 +20,7 @@ class ObstacleAvoidance:
     BLOCKED = "BLOCKED"
 
     # Maneuver leg phases executed one at a time by the controller.
+    DRIVE_UP = "DRIVE_UP"
     TURN_ASIDE = "TURN_ASIDE"
     DRIVE_ASIDE = "DRIVE_ASIDE"
     TURN_FORWARD = "TURN_FORWARD"
@@ -30,8 +31,12 @@ class ObstacleAvoidance:
     # Distance ahead of the robot at which an obstacle begins bypass planning.
     OBSTACLE_TRIGGER_DISTANCE = 1.5
 
+    # Stop short distance before the obstacle when driving up to it.
+    DRIVE_UP_STOP_MARGIN = 0.4
+
     # Half-width of the planned forward path used when evaluating obstacle clearance.
-    PATH_HALF_WIDTH = 0.40
+    # A narrow value ensures only objects directly ahead are considered blocking.
+    PATH_HALF_WIDTH = 0.10
 
     # Lateral distance the robot needs beside an obstacle edge.
     ROBOT_RADIUS = 0.36
@@ -54,6 +59,14 @@ class ObstacleAvoidance:
     # Extra clearance demanded at planning time so scan noise does not
     # push the executed route below ROBOT_CLEARANCE.
     PLANNING_CLEARANCE_MARGIN = 0.05
+
+    # Scan points within this radius of the robot are excluded from clearance checks
+    # to avoid false positives from the robot's immediate vicinity.
+    ROBOT_RADIUS_FOR_CLEARANCE = 0.3
+
+    # Scan points within this distance of route segment endpoints are excluded
+    # to avoid false positives when the robot is at the start of a leg.
+    ENDPOINT_CLEARANCE = 0.1
 
     def __init__(
         self,
@@ -297,7 +310,9 @@ class ObstacleAvoidance:
         side, aside_distance, return_distance = best_route
         aside_heading = self.goal_heading + side * math.pi / 2
         return_heading = self.goal_heading - side * math.pi / 2
+        drive_up_distance = max(0.0, extent.along - self.DRIVE_UP_STOP_MARGIN)
         self._legs = [
+            (self.DRIVE_UP, self.goal_heading, drive_up_distance),
             (self.TURN_ASIDE, aside_heading, 0.0),
             (self.DRIVE_ASIDE, aside_heading, aside_distance),
             (self.TURN_FORWARD, self.goal_heading, 0.0),
@@ -329,6 +344,9 @@ class ObstacleAvoidance:
             angle = scan.angle_min + index * scan.angle_increment
             world_x = position[0] + distance * math.cos(orientation + angle)
             world_y = position[1] + distance * math.sin(orientation + angle)
+            # Exclude points too close to the robot to avoid false positives
+            if math.hypot(world_x - position[0], world_y - position[1]) < self.ROBOT_RADIUS_FOR_CLEARANCE:
+                continue
             points.append((world_x, world_y))
 
         if not points:
@@ -337,6 +355,9 @@ class ObstacleAvoidance:
         clearances = []
         for start, end in zip(route_points, route_points[1:]):
             for point in points:
+                # Exclude points too close to segment endpoints
+                if math.dist(point, start) < self.ENDPOINT_CLEARANCE or math.dist(point, end) < self.ENDPOINT_CLEARANCE:
+                    continue
                 clearances.append(self._distance_to_segment(point, start, end))
         return min(clearances) if clearances else math.inf
 
@@ -350,6 +371,7 @@ class ObstacleAvoidance:
 
         messages = {
             self.GO_TO_GOAL: "Driving toward the goal.",
+            self.DRIVE_UP: "Driving up to the obstacle.",
             self.TURN_ASIDE: "Obstacle detected; turning toward the clearer side.",
             self.DRIVE_ASIDE: "Moving sideways to clear the obstacle edge.",
             self.TURN_FORWARD: "Turning to face forward again.",

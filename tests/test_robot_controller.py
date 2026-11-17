@@ -173,7 +173,7 @@ def test_publish_stop_publishes_zero_twist():
     assert command.angular.z == 0.0
 
 
-def test_movement_starts_turn_aside_when_obstacle_blocks_path():
+def test_movement_starts_drive_up_when_obstacle_blocks_path():
     controller = make_controller(goal_distance=4.0)
     controller._latest_scan = SimpleNamespace(
         ranges=[0.8],
@@ -186,9 +186,9 @@ def test_movement_starts_turn_aside_when_obstacle_blocks_path():
     controller.movement_callback()
 
     command = controller.command_publisher.messages[-1]
-    assert controller.navigation_state == ObstacleAvoidance.TURN_ASIDE
-    assert command.linear.x == 0.0
-    assert command.angular.z > 0.0
+    assert controller.navigation_state == ObstacleAvoidance.DRIVE_UP
+    assert command.linear.x > 0.0
+    assert command.angular.z == pytest.approx(0.0)
 
 
 def test_run_leg_turns_in_place_until_target_heading():
