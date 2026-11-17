@@ -9,7 +9,6 @@ from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 
-from occupancy_grid import OccupancyGrid
 from obstacle_avoidance import ObstacleAvoidance
 from odometry import OdometryTracker
 
@@ -20,12 +19,10 @@ except ImportError:
 
 """
 Each /scan message contains distances at different angles.
-The controller passes that scan to the occupancy grid,
-which turns valid readings into obstacle positions
-using the robot's pose (scan_callback, update_from_scan).
-Obstacle avoidance finds the obstacle blocking the planned
-path corridor and executes a measured turn-drive-return
-maneuver around it.
+The controller passes the scan directly to ObstacleAvoidance,
+which projects valid readings into world coordinates using the robot's pose
+and finds obstacles blocking the planned path corridor, then executes a
+measured turn-drive-return maneuver around them.
 """
 
 
@@ -110,9 +107,6 @@ class RobotController(Node):
         self.goal_distance = float(goal_distance)
 
         self.odometry = OdometryTracker()
-        self.occupancy_grid = OccupancyGrid(
-            resolution=self.OCCUPANCY_GRID_RESOLUTION
-        )
 
         self.obstacle_avoidance: ObstacleAvoidance | None = None
         self._leg_index: int | None = None
@@ -121,6 +115,7 @@ class RobotController(Node):
         self.start_orientation: float | None = None
         self.goal_position: tuple[float, float] | None = None
         self.navigation_state = "WAITING_FOR_SENSORS"
+        self._latest_scan: LaserScan | None = None
 
         self.command_publisher = self.create_publisher(Twist, "/cmd_vel", 10)
         self._last_cmd_vel_subscriber_count: int | None = None
@@ -150,21 +145,8 @@ class RobotController(Node):
             )
 
     def scan_callback(self, scan: LaserScan) -> None:
-        """Project scan returns into the odometry-based occupancy grid."""
-        if not self.odometry.has_received_odometry:
-            print(
-                "\n[debug] Ignoring LiDAR scan\n"
-                "\todometry has not been received"
-            )
-            return
-
-        updated = self.occupancy_grid.update_from_scan(
-            scan,
-            self.odometry.get_position(),
-            self.odometry.get_orientation(),
-        )
-        if not updated:
-            self.get_logger().warning("Ignored an invalid LiDAR scan.")
+        """Store the latest LiDAR scan for obstacle avoidance."""
+        self._latest_scan = scan
 
     def hazard_callback(self, msg: HazardDetectionVector) -> None:
         """Start the bump escape maneuver on a rising bumper edge."""
@@ -189,7 +171,7 @@ class RobotController(Node):
 
     def sensors_are_ready(self) -> bool:
         """Wait until odometry and a valid LiDAR scan are available."""
-        return self.odometry.has_received_odometry and self.occupancy_grid.has_scan
+        return self.odometry.has_received_odometry and self._latest_scan is not None
 
     def movement_callback(self) -> None:
         """Update the route and publish one movement command."""
@@ -209,7 +191,7 @@ class RobotController(Node):
             print(
                 "\n[debug] Waiting for sensors\n"
                 f"\todometry: {self.odometry.has_received_odometry}\n"
-                f"\tlidar_scan: {self.occupancy_grid.has_scan}\n"
+                f"\tlidar_scan: {self._latest_scan is not None}\n"
                 f"\tscan_publishers: {self.count_publishers('/scan')}"
             )
             self.publish_stop()
@@ -240,7 +222,11 @@ class RobotController(Node):
             self.publish_stop()
             return
 
-        self.navigation_state = avoidance.update(current_position)
+        self.navigation_state = avoidance.update(
+            current_position,
+            current_orientation,
+            self._latest_scan,
+        )
         print(
             "\n[debug] Obstacle avoidance state\n"
             f"\t{self.navigation_state}"
@@ -248,7 +234,7 @@ class RobotController(Node):
         if self.navigation_state == ObstacleAvoidance.BLOCKED:
             self.publish_stop()
             self.get_logger().error(
-                "No clear bypass is visible in the occupancy grid; robot stopped."
+                "No clear bypass is visible; robot stopped."
             )
             return
 
@@ -380,7 +366,6 @@ class RobotController(Node):
             f"\tgoal_distance: {self.goal_distance:.3f}"
         )
         self.obstacle_avoidance = ObstacleAvoidance(
-            self.occupancy_grid,
             current_position,
             goal_position,
         )

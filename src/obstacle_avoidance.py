@@ -1,12 +1,19 @@
-"""Measure a blocking obstacle and plan a turn-drive maneuver around it."""
+"""Plan a turn-drive maneuver around an obstacle using raw LiDAR data."""
 
 import math
+from typing import Protocol, Sequence
 
-from occupancy_grid import ObstacleExtent, OccupancyGrid
+
+class LaserScanData(Protocol):
+    angle_min: float
+    angle_increment: float
+    range_min: float
+    range_max: float
+    ranges: Sequence[float]
 
 
 class ObstacleAvoidance:
-    """Plan a sideways bypass using the measured width of the obstacle."""
+    """Plan a sideways bypass using raw LiDAR scan data."""
 
     # Run States
     GO_TO_GOAL = "GO_TO_GOAL"
@@ -50,11 +57,9 @@ class ObstacleAvoidance:
 
     def __init__(
         self,
-        occupancy_grid: OccupancyGrid,
         start_position: tuple[float, float],
         goal_position: tuple[float, float],
     ):
-        self.occupancy_grid = occupancy_grid
         self.start_position = start_position
         self.goal_position = goal_position
         self.goal_heading = math.atan2(
@@ -74,10 +79,15 @@ class ObstacleAvoidance:
         """Return the maneuver leg currently being executed, if any."""
         return self._current_leg
 
-    def update(self, current_position: tuple[float, float]) -> str:
+    def update(
+        self,
+        current_position: tuple[float, float],
+        current_orientation: float,
+        scan: LaserScanData,
+    ) -> str:
         """Find a blocking obstacle and plan the bypass maneuver."""
         if self.state == self.GO_TO_GOAL:
-            self._start_bypass_if_needed(current_position)
+            self._start_bypass_if_needed(current_position, current_orientation, scan)
         return self.state
 
     def finish_leg(self) -> None:
@@ -87,15 +97,13 @@ class ObstacleAvoidance:
     def _start_bypass_if_needed(
         self,
         current_position: tuple[float, float],
+        current_orientation: float,
+        scan: LaserScanData,
     ) -> None:
-        extent = self.occupancy_grid.blocking_obstacle(
+        extent = self._find_blocking_obstacle(
             current_position,
-            self.goal_heading,
-            self.PATH_HALF_WIDTH,
-            self.OBSTACLE_TRIGGER_DISTANCE,
-            depth=self.OBSTACLE_DEPTH,
-            width_margin=self.WIDTH_MARGIN,
-            lateral_origin=self.start_position,
+            current_orientation,
+            scan,
         )
         if extent is None:
             return
@@ -130,7 +138,7 @@ class ObstacleAvoidance:
                 f"\trequired_clearance: {self.ROBOT_CLEARANCE:.3f} m"
             )
 
-        if not self._choose_bypass(current_position, extent):
+        if not self._choose_bypass(current_position, extent, scan, current_orientation):
             print(
                 "\n[debug] Both bypass routes failed\n"
                 f"\trequired_clearance: {self.ROBOT_CLEARANCE:.3f} m"
@@ -140,10 +148,69 @@ class ObstacleAvoidance:
 
         self._advance_leg()
 
+    def _find_blocking_obstacle(
+        self,
+        position: tuple[float, float],
+        orientation: float,
+        scan: LaserScanData,
+    ) -> "ObstacleExtent | None":
+        """Return the lateral extent of the obstacle blocking the path corridor."""
+        forward = (math.cos(orientation), math.sin(orientation))
+        left = (-forward[1], forward[0])
+
+        points = []
+        for index, distance in enumerate(scan.ranges):
+            if (
+                not math.isfinite(distance)
+                or distance < scan.range_min
+                or distance > scan.range_max
+            ):
+                continue
+
+            angle = scan.angle_min + index * scan.angle_increment
+            world_x = position[0] + distance * math.cos(orientation + angle)
+            world_y = position[1] + distance * math.sin(orientation + angle)
+            relative = (world_x - position[0], world_y - position[1])
+            along = self._dot(relative, forward)
+            lateral = self._dot(
+                (world_x - self.start_position[0], world_y - self.start_position[1]),
+                left,
+            )
+            points.append((along, lateral))
+
+        corridor = [
+            (along, lateral)
+            for along, lateral in points
+            if 0.0 < along <= self.OBSTACLE_TRIGGER_DISTANCE
+            and abs(lateral) <= self.PATH_HALF_WIDTH
+        ]
+        if not corridor:
+            return None
+
+        nearest = min(along for along, _ in corridor)
+        lateral_limit = self.PATH_HALF_WIDTH + self.WIDTH_MARGIN
+        lateral_values = [
+            lateral
+            for along, lateral in points
+            if nearest - 0.05 <= along <= nearest + self.OBSTACLE_DEPTH
+            and abs(lateral) <= lateral_limit
+        ]
+        if not lateral_values:
+            return None
+
+        return ObstacleExtent(
+            along=nearest,
+            along_max=max(along for along, _ in points if nearest - 0.05 <= along <= nearest + self.OBSTACLE_DEPTH),
+            lat_min=min(lateral_values),
+            lat_max=max(lateral_values),
+        )
+
     def _choose_bypass(
         self,
         current_position: tuple[float, float],
-        extent: ObstacleExtent,
+        extent: "ObstacleExtent",
+        scan: LaserScanData,
+        orientation: float,
     ) -> bool:
         forward = self._forward
         left = (-forward[1], forward[0])
@@ -199,11 +266,9 @@ class ObstacleAvoidance:
                 pass_point,
                 return_point,
             ]
-            clearances = [
-                self.occupancy_grid.segment_clearance(start, end)
-                for start, end in zip(route_points, route_points[1:])
-            ]
-            route_clearance = min(clearances)
+            route_clearance = self._scan_segment_clearance(
+                scan, orientation, current_position, route_points
+            )
             print(
                 f"\n[debug] Bypass candidate\n"
                 f"\tside: {side:+.0f}\n"
@@ -242,6 +307,38 @@ class ObstacleAvoidance:
             (self.TURN_FORWARD, self.goal_heading, 0.0),
         ]
         return True
+
+    def _scan_segment_clearance(
+        self,
+        scan: LaserScanData,
+        orientation: float,
+        position: tuple[float, float],
+        route_points: list[tuple[float, float]],
+    ) -> float:
+        """Return the closest scan distance from a set of line segments."""
+        forward = (math.cos(orientation), math.sin(orientation))
+        points = []
+        for index, distance in enumerate(scan.ranges):
+            if (
+                not math.isfinite(distance)
+                or distance < scan.range_min
+                or distance > scan.range_max
+            ):
+                continue
+
+            angle = scan.angle_min + index * scan.angle_increment
+            world_x = position[0] + distance * math.cos(orientation + angle)
+            world_y = position[1] + distance * math.sin(orientation + angle)
+            points.append((world_x, world_y))
+
+        if not points:
+            return math.inf
+
+        clearances = []
+        for start, end in zip(route_points, route_points[1:]):
+            for point in points:
+                clearances.append(self._distance_to_segment(point, start, end))
+        return min(clearances) if clearances else math.inf
 
     def _set_state(self, state: str) -> None:
         """Announce a state transition once when that action begins."""
@@ -286,3 +383,31 @@ class ObstacleAvoidance:
         second: tuple[float, float],
     ) -> float:
         return first[0] * second[0] + first[1] * second[1]
+
+    @staticmethod
+    def _distance_to_segment(
+        point: tuple[float, float],
+        start: tuple[float, float],
+        end: tuple[float, float],
+    ) -> float:
+        segment = (end[0] - start[0], end[1] - start[1])
+        segment_length_squared = segment[0] ** 2 + segment[1] ** 2
+        if segment_length_squared == 0.0:
+            return math.dist(point, start)
+
+        point_from_start = (point[0] - start[0], point[1] - start[1])
+        projection = ObstacleAvoidance._dot(point_from_start, segment)
+        fraction = min(1.0, max(0.0, projection / segment_length_squared))
+        nearest_point = (
+            start[0] + fraction * segment[0],
+            start[1] + fraction * segment[1],
+        )
+        return math.dist(point, nearest_point)
+
+
+class ObstacleExtent:
+    def __init__(self, along: float, along_max: float, lat_min: float, lat_max: float):
+        self.along = along
+        self.along_max = along_max
+        self.lat_min = lat_min
+        self.lat_max = lat_max

@@ -43,14 +43,6 @@ def test_goal_distance_must_be_finite_non_negative_number(distance):
         RobotController(distance)
 
 
-def test_occupancy_grid_uses_controller_resolution_setting(monkeypatch):
-    monkeypatch.setattr(RobotController, "OCCUPANCY_GRID_RESOLUTION", 0.10)
-
-    controller = make_controller()
-
-    assert controller.occupancy_grid.resolution == 0.10
-
-
 def test_start_creates_only_one_control_timer():
     controller = make_controller()
 
@@ -62,17 +54,7 @@ def test_start_creates_only_one_control_timer():
     assert first_timer.period == controller.CONTROL_PERIOD_SECONDS
 
 
-def test_scan_is_ignored_until_odometry_is_available():
-    controller = make_controller()
-    controller.odometry.has_received_odometry = False
-    scan = SimpleNamespace()
-
-    controller.scan_callback(scan)
-
-    assert controller.occupancy_grid.has_scan is False
-
-
-def test_scan_updates_occupancy_grid_after_odometry_is_available():
+def test_scan_is_stored_for_obstacle_avoidance():
     controller = make_controller()
     scan = SimpleNamespace(
         ranges=[1.0],
@@ -84,8 +66,7 @@ def test_scan_updates_occupancy_grid_after_odometry_is_available():
 
     controller.scan_callback(scan)
 
-    assert controller.occupancy_grid.has_scan is True
-    assert len(controller.occupancy_grid.occupied_cells) == 1
+    assert controller._latest_scan is scan
 
 
 def test_movement_waits_for_sensors_and_publishes_stop():
@@ -102,7 +83,13 @@ def test_movement_waits_for_sensors_and_publishes_stop():
 
 def test_movement_publishes_forward_command_when_path_is_clear():
     controller = make_controller(goal_distance=1.0)
-    controller.occupancy_grid.has_scan = True
+    controller._latest_scan = SimpleNamespace(
+        ranges=[2.0],
+        angle_min=0.0,
+        angle_increment=0.0,
+        range_min=0.1,
+        range_max=10.0,
+    )
 
     controller.movement_callback()
 
@@ -114,7 +101,13 @@ def test_movement_publishes_forward_command_when_path_is_clear():
 
 def test_movement_turns_in_place_when_heading_error_is_large():
     controller = make_controller(goal_distance=1.0)
-    controller.occupancy_grid.has_scan = True
+    controller._latest_scan = SimpleNamespace(
+        ranges=[2.0],
+        angle_min=0.0,
+        angle_increment=0.0,
+        range_min=0.1,
+        range_max=10.0,
+    )
     controller.odometry = FakeOdometry()
     controller._initialize_route((0.0, 0.0), 0.0)
     controller.odometry.orientation = math.pi / 2
@@ -128,7 +121,13 @@ def test_movement_turns_in_place_when_heading_error_is_large():
 
 def test_movement_stops_after_goal_is_reached():
     controller = make_controller(goal_distance=1.0)
-    controller.occupancy_grid.has_scan = True
+    controller._latest_scan = SimpleNamespace(
+        ranges=[2.0],
+        angle_min=0.0,
+        angle_increment=0.0,
+        range_min=0.1,
+        range_max=10.0,
+    )
     controller.goal_position = (1.0, 0.0)
     controller.odometry = FakeOdometry(position=(1.0, 0.0))
 
@@ -142,10 +141,16 @@ def test_movement_stops_after_goal_is_reached():
 
 def test_movement_stops_when_obstacle_avoidance_is_blocked():
     controller = make_controller()
-    controller.occupancy_grid.has_scan = True
+    controller._latest_scan = SimpleNamespace(
+        ranges=[0.1],
+        angle_min=0.0,
+        angle_increment=0.0,
+        range_min=0.1,
+        range_max=10.0,
+    )
     controller.goal_position = (1.0, 0.0)
     controller.obstacle_avoidance = SimpleNamespace(
-        update=lambda position: ObstacleAvoidance.BLOCKED,
+        update=lambda pos, orient, scan: ObstacleAvoidance.BLOCKED,
         current_leg=None,
     )
 
@@ -170,8 +175,13 @@ def test_publish_stop_publishes_zero_twist():
 
 def test_movement_starts_turn_aside_when_obstacle_blocks_path():
     controller = make_controller(goal_distance=4.0)
-    controller.occupancy_grid.has_scan = True
-    controller.occupancy_grid.occupied_cells = {(0, 0): (0.8, 0.0)}
+    controller._latest_scan = SimpleNamespace(
+        ranges=[0.8],
+        angle_min=0.0,
+        angle_increment=0.0,
+        range_min=0.1,
+        range_max=10.0,
+    )
 
     controller.movement_callback()
 
