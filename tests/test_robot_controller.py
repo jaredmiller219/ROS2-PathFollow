@@ -145,7 +145,8 @@ def test_movement_stops_when_obstacle_avoidance_is_blocked():
     controller.occupancy_grid.has_scan = True
     controller.goal_position = (1.0, 0.0)
     controller.obstacle_avoidance = SimpleNamespace(
-        update=lambda position: ObstacleAvoidance.BLOCKED
+        update=lambda position: ObstacleAvoidance.BLOCKED,
+        current_leg=None,
     )
 
     controller.movement_callback()
@@ -165,3 +166,60 @@ def test_publish_stop_publishes_zero_twist():
     assert isinstance(command, Twist)
     assert command.linear.x == 0.0
     assert command.angular.z == 0.0
+
+
+def test_movement_starts_turn_aside_when_obstacle_blocks_path():
+    controller = make_controller(goal_distance=4.0)
+    controller.occupancy_grid.has_scan = True
+    controller.occupancy_grid.occupied_cells = {(0, 0): (0.8, 0.0)}
+
+    controller.movement_callback()
+
+    command = controller.command_publisher.messages[-1]
+    assert controller.navigation_state == ObstacleAvoidance.TURN_ASIDE
+    assert command.linear.x == 0.0
+    assert command.angular.z > 0.0
+
+
+def test_run_leg_turns_in_place_until_target_heading():
+    controller = make_controller()
+    avoidance = SimpleNamespace(
+        leg_index=1,
+        state=ObstacleAvoidance.DRIVE_ASIDE,
+    )
+
+    def finish_leg():
+        avoidance.state = ObstacleAvoidance.DRIVE_ASIDE
+
+    avoidance.finish_leg = finish_leg
+    controller._run_leg(
+        (0.0, 0.0),
+        math.pi / 2,
+        (ObstacleAvoidance.TURN_ASIDE, math.pi / 2, 0.0),
+        avoidance,
+    )
+
+    command = controller.command_publisher.messages[-1]
+    assert controller.navigation_state == ObstacleAvoidance.DRIVE_ASIDE
+    assert command.linear.x == 0.0
+    assert command.angular.z == 0.0
+
+
+def test_run_leg_drives_until_covering_planned_distance():
+    controller = make_controller()
+    avoidance = SimpleNamespace(
+        leg_index=2,
+        state=ObstacleAvoidance.PASS_OBSTACLE,
+    )
+    avoidance.finish_leg = lambda: None
+    leg = (ObstacleAvoidance.PASS_OBSTACLE, 0.0, 0.2)
+
+    controller._run_leg((0.0, 0.0), 0.0, leg, avoidance)
+    controller._run_leg((0.10, 0.0), 0.0, leg, avoidance)
+    controller._run_leg((0.18, 0.0), 0.0, leg, avoidance)
+
+    commands = controller.command_publisher.messages
+    assert commands[0].linear.x > 0.0
+    assert commands[0].angular.z == pytest.approx(0.0)
+    assert commands[-1].linear.x == 0.0
+    assert commands[-1].angular.z == 0.0

@@ -20,12 +20,13 @@ obstacles, and reach a target destination.
    needed.
 
 3. `ObstacleAvoidance` checks the mapped points ahead of the robot. If an
-   obstacle is within the trigger distance, it checks candidate bypass routes
-   for sufficient clearance.
+   obstacle blocks the path corridor, it measures the obstacle's lateral
+   extent and selects the clearer side.
 
-4. The controller follows the selected waypoints by publishing velocity
-   commands to `/cmd_vel`. It returns to the original path after passing the
-   obstacle; if no clear bypass is available, it stops.
+4. `RobotController` executes the bypass as separate legs: turn aside, drive
+   sideways clear of the obstacle, turn toward the goal direction, drive
+   forward past it, turn back toward the path line, return to the line, and
+   turn toward the goal again. If no clear bypass is available, it stops.
 
 ## Development environment
 

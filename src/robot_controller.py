@@ -19,15 +19,15 @@ except ImportError:
     HazardDetectionVector = None
 
 """
-Each /scan message contains distances at different angles. 
-The controller passes that scan to the occupancy grid, 
+Each /scan message contains distances at different angles.
+The controller passes that scan to the occupancy grid,
 which turns valid readings into obstacle positions
-using the robot's pose (scan_callback, update_from_scan). 
-Obstacle avoidance then finds the nearest mapped point 
-inside the forward view cone (closest_obstacle_ahead) 
-and starts a bypass when it is within the trigger distance
-(obstacle check, OBSTACLE_TRIGGER_DISTANCE).
+using the robot's pose (scan_callback, update_from_scan).
+Obstacle avoidance finds the obstacle blocking the planned
+path corridor and executes a measured turn-drive-return
+maneuver around it.
 """
+
 
 class RobotController(Node):
     # Occupancy-grid cell width in meters; change this to adjust map resolution.
@@ -37,8 +37,11 @@ class RobotController(Node):
     # Acceptable distance from the final goal before the robot declares success.
     GOAL_TOLERANCE = 0.03
 
-    # Distance threshold used to decide whether the current waypoint has been reached.
-    WAYPOINT_TOLERANCE = 0.10
+    # Angle threshold for deciding a turn leg has reached its target heading.
+    LEG_ANGLE_TOLERANCE = 0.08
+
+    # Distance tolerance for deciding a drive leg has covered its distance.
+    LEG_DISTANCE_TOLERANCE = 0.03
 
     # How often the movement controller updates the robot's motion.
     CONTROL_PERIOD_SECONDS = 0.1
@@ -112,6 +115,8 @@ class RobotController(Node):
         )
 
         self.obstacle_avoidance: ObstacleAvoidance | None = None
+        self._leg_index: int | None = None
+        self._leg_start_position: tuple[float, float] | None = None
         self.start_position: tuple[float, float] | None = None
         self.start_orientation: float | None = None
         self.goal_position: tuple[float, float] | None = None
@@ -247,6 +252,16 @@ class RobotController(Node):
             )
             return
 
+        leg = avoidance.current_leg
+        if leg is not None:
+            self._run_leg(
+                current_position,
+                current_orientation,
+                leg,
+                avoidance,
+            )
+            return
+
         target = self._current_target()
         if target is None:
             print(
@@ -256,19 +271,6 @@ class RobotController(Node):
             self.publish_stop()
             return
         print(f"\n[debug] Navigation target\n\ttarget: {target}")
-
-        if self.navigation_state != ObstacleAvoidance.GO_TO_GOAL:
-            clearance = self.occupancy_grid.segment_clearance(
-                current_position,
-                target,
-            )
-            if clearance < ObstacleAvoidance.ROBOT_CLEARANCE:
-                self.navigation_state = ObstacleAvoidance.BLOCKED
-                self.publish_stop()
-                self.get_logger().error(
-                    "The planned bypass is blocked by a mapped obstacle."
-                )
-                return
 
         self.navigate_to_target(
             current_position,
@@ -387,9 +389,80 @@ class RobotController(Node):
     def _current_target(self) -> tuple[float, float] | None:
         if self.navigation_state == ObstacleAvoidance.GO_TO_GOAL:
             return self.goal_position
-        if self.obstacle_avoidance is None:
-            return None
-        return self.obstacle_avoidance.waypoint
+        return None
+
+    def _run_leg(
+        self,
+        current_position: tuple[float, float],
+        current_orientation: float,
+        leg: tuple[str, float, float],
+        avoidance: ObstacleAvoidance,
+    ) -> None:
+        """Execute one bypass maneuver leg: turn or drive a set distance."""
+        phase, heading, distance = leg
+        if self._leg_index != avoidance.leg_index:
+            self._leg_index = avoidance.leg_index
+            self._leg_start_position = current_position
+
+        angle_error = math.atan2(
+            math.sin(heading - current_orientation),
+            math.cos(heading - current_orientation),
+        )
+        command = Twist()
+        finished = False
+
+        if phase.startswith("TURN"):
+            if abs(angle_error) <= self.LEG_ANGLE_TOLERANCE:
+                finished = True
+            else:
+                command.angular.z = self._clamp(
+                    self.TURN_GAIN * angle_error,
+                    -self.MAX_ANGULAR_SPEED,
+                    self.MAX_ANGULAR_SPEED,
+                )
+        elif abs(angle_error) > self.TURN_IN_PLACE_THRESHOLD:
+            command.angular.z = self._clamp(
+                self.TURN_GAIN * angle_error,
+                -self.MAX_ANGULAR_SPEED,
+                self.MAX_ANGULAR_SPEED,
+            )
+        else:
+            leg_forward = (math.cos(heading), math.sin(heading))
+            start = self._leg_start_position or current_position
+            progress = (
+                (current_position[0] - start[0]) * leg_forward[0]
+                + (current_position[1] - start[1]) * leg_forward[1]
+            )
+            remaining = distance - progress
+            if remaining <= self.LEG_DISTANCE_TOLERANCE:
+                finished = True
+            else:
+                command.linear.x = min(
+                    self.MAX_LINEAR_SPEED,
+                    max(0.1, remaining * 0.8),
+                )
+                command.angular.z = self._clamp(
+                    self.TURN_GAIN * angle_error,
+                    -self.MAX_ANGULAR_SPEED,
+                    self.MAX_ANGULAR_SPEED,
+                )
+
+        if finished:
+            avoidance.finish_leg()
+            self.navigation_state = avoidance.state
+            self.publish_stop()
+            return
+
+        print(
+            "\n[debug] Maneuver leg\n"
+            f"\tphase: {phase}\n"
+            f"\theading: {heading:.3f}\n"
+            f"\tdistance: {distance:.3f}\n"
+            f"\tangle_error: {angle_error:.3f}\n"
+            f"\tlinear_x: {command.linear.x:.3f}\n"
+            f"\tangular_z: {command.angular.z:.3f}"
+        )
+        self.command_publisher.publish(command)
 
     def has_reached_goal(self, current_position: tuple[float, float]) -> bool:
         """Check whether the robot is physically within goal tolerance."""
@@ -404,15 +477,11 @@ class RobotController(Node):
         current_orientation: float,
         target: tuple[float, float],
     ) -> None:
-        """Turn toward a waypoint, then drive toward it."""
+        """Turn toward the goal, then drive toward it."""
         dx = target[0] - current_position[0]
         dy = target[1] - current_position[1]
         distance = math.hypot(dx, dy)
-        target_tolerance = (
-            self.GOAL_TOLERANCE
-            if self.navigation_state == ObstacleAvoidance.GO_TO_GOAL
-            else self.WAYPOINT_TOLERANCE
-        )
+        target_tolerance = self.GOAL_TOLERANCE
         if distance <= target_tolerance:
             print(
                 "\n[debug] Target reached within tolerance\n"

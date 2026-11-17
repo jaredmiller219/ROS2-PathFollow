@@ -1,7 +1,7 @@
 """Build a sparse 2D occupancy grid from the latest LiDAR scan."""
 
 import math
-from typing import Protocol, Sequence
+from typing import NamedTuple, Protocol, Sequence
 
 
 class LaserScanData(Protocol):
@@ -10,6 +10,15 @@ class LaserScanData(Protocol):
     range_min: float
     range_max: float
     ranges: Sequence[float]
+
+
+class ObstacleExtent(NamedTuple):
+    """Lateral span of the obstacle blocking the path, in path-frame meters."""
+
+    along: float
+    along_max: float
+    lat_min: float
+    lat_max: float
 
 
 class OccupancyGrid:
@@ -115,6 +124,64 @@ class OccupancyGrid:
                 nearest_distance = distance
 
         return nearest_point
+
+    def blocking_obstacle(
+        self,
+        position: tuple[float, float],
+        heading: float,
+        corridor_half_width: float,
+        lookahead: float,
+        depth: float = 0.35,
+        width_margin: float = 0.6,
+        lateral_origin: tuple[float, float] | None = None,
+    ) -> ObstacleExtent | None:
+        """Return the lateral extent of the obstacle blocking the path corridor.
+
+        Candidate cells must sit inside the forward corridor. The returned
+        extent covers every mapped cell within ``depth`` meters past the
+        nearest candidate, reaching ``width_margin`` beyond the corridor so
+        wide obstacles are measured fully.
+        """
+        origin = position if lateral_origin is None else lateral_origin
+        forward = (math.cos(heading), math.sin(heading))
+        left = (-forward[1], forward[0])
+
+        cells = []
+        for point in self.occupied_cells.values():
+            relative = (point[0] - position[0], point[1] - position[1])
+            along = self._dot(relative, forward)
+            lateral = self._dot(
+                (point[0] - origin[0], point[1] - origin[1]),
+                left,
+            )
+            cells.append((along, lateral))
+
+        corridor = [
+            (along, lateral)
+            for along, lateral in cells
+            if 0.0 < along <= lookahead
+            and abs(lateral) <= corridor_half_width
+        ]
+        if not corridor:
+            return None
+
+        nearest = min(along for along, _ in corridor)
+        lateral_limit = corridor_half_width + width_margin
+        band = [
+            (along, lateral)
+            for along, lateral in cells
+            if nearest - 0.05 <= along <= nearest + depth
+            and abs(lateral) <= lateral_limit
+        ]
+        if not band:
+            return None
+
+        return ObstacleExtent(
+            along=nearest,
+            along_max=max(along for along, _ in band),
+            lat_min=min(lateral for _, lateral in band),
+            lat_max=max(lateral for _, lateral in band),
+        )
 
     def segment_clearance(
         self,
