@@ -27,7 +27,7 @@ class ObstacleAvoidance:
     PATH_HALF_WIDTH = 0.40
 
     # Robot body radius in meters. TODO: replace with the measured value.
-    ROBOT_RADIUS = 0.10
+    ROBOT_RADIUS = 0.36
 
     # Extra clearance beyond the robot radius (~4 inches).
     EDGE_MARGIN = 0.10
